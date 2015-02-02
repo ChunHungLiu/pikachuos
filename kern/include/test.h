@@ -39,6 +39,9 @@
 /* These are only actually available if OPT_SYNCHPROBS is set. */
 int elves(int, char**);
 int airballoon(int, char**);
+int pingpong(int, char**);
+int tfs(int, char**);
+int whalemating(int, char**);
 
 /*
  * Test code.
