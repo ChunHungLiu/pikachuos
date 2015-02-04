@@ -1,0 +1,36 @@
+1. We can find the code for executing a trap in kern/arch/mips/locore/trap.c (and exception-mips1.S). The control is transferred to the kernel after trap. For interrupt also transfer the control to the kernel, but it usually happens on a hardware level in an async way.
+
+2. We can find the trap when object dumping build/userland/lib/libc/syscalls.o. The assembly code responds to the trap and then calls the system function.
+
+3. We need those because kernel and user-level functions may have different dependencies. For instance, one needs <types.h>
+ <lib.h> while the other needs <stdio.h>
+
+4. Configure will configure root path and debug options. So we need to re-run configure if we change the location of the directory or wish change the debug settings.
+
+5. Specific register architecture, endianness, size and accepted signals are possibly different. We might also want to have different declarations for performance concerns.
+
+6. We can find the interface for trapframe in kern/arch/mips/include/trapframe.h. And the size is 37 * uint32_t = 148 bytes
+
+7. When we switch pset or change the loaded libraries(files)
+
+8. When the dependency changes in files
+
+9. After we changed any c implementation, we should rum bmake to compile them. And if that succeeded, we can run bmake install to install the system.
+
+10. In this way, we have an easy mechanism to toggle assertion and inline. So we can easily debug array related code when needed and improve performance when we're done.
+
+11. Add function declaration in lib (optional); add encapsulating command in menu.c; add hooks in command table and update menu description.
+
+12. Since the architecture is different in os161, the original implementation may not work in os161. We may also want to cut some flag options for os161
+
+13. We hold the value in v0 register, move it to s0 and then exit the program. After that, we check the number, and print if execution failed or not.
+
+14.
+add kern/include/kern/syscall.h
+add arch/mips/syscall/syscall.c
+add implementation file in kern
+add interface in unistd.h
+After these, we should rerun config, bmake depend, bmake and bmake install to get the new system function working
+
+15.
+start.S first setup the stack frame and register and then executes kmain. In kmain, boot is called, initializes some libraries and prints out basic information. kmain then call menu, which setup the menu, prints some menu details and wait for input. When we type in a command, it calls menu_execute, which then calls cmd_dispatch to start a new user program based on the cmdtable.
