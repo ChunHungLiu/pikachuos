@@ -1,4 +1,4 @@
-1. We can find the code for executing a trap in kern/arch/mips/locore/trap.c (and exception-mips1.S). The control is transferred to the kernel after trap. For interrupt also transfer the control to the kernel, but it usually happens on a hardware level in an async way.
+1. We can find the code for executing a trap in kern/arch/mips/locore/trap.c (and exception-mips1.S 105, where some setup happens). The control is transferred to the kernel after trap. For interrupt also transfer the control to the kernel, but it usually happens on a hardware level in an async way.
 
 2. We can find the trap when object dumping build/userland/lib/libc/syscalls.o. The assembly code responds to the trap and then calls the system function.
 
@@ -30,6 +30,7 @@ add kern/include/kern/syscall.h
 add arch/mips/syscall/syscall.c
 add implementation file in kern
 add interface in unistd.h
+add menu entry (optional)
 After these, we should rerun config, bmake depend, bmake and bmake install to get the new system function working
 
 15.
