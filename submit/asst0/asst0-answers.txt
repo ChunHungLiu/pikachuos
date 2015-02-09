@@ -1,29 +1,103 @@
 1. We can find the code for executing a trap in kern/arch/mips/locore/trap.c (and exception-mips1.S 105, where some setup happens). The control is transferred to the kernel after trap. For interrupt also transfer the control to the kernel, but it usually happens on a hardware level in an async way.
 
+> exception-mips1.S:105 is almost correct, except that we wanted you to go one 
+> step back, to :69 (for UTLB exceptions) or :87 for all others.
+>
+> What we were asking re:the control transfer is mips_trap in trap.c, 
+> specifically; "to the kernel" is too vague.
+>
+> Re:interrupts, we were also looking for more specificity, a la "Interrupts 
+> don't differ, as on MIPS they're a special case of trap."
+
+>> 1/2
+
 2. We can find the trap when object dumping build/userland/lib/libc/syscalls.o. The assembly code responds to the trap and then calls the system function.
+
+> This is an object file; we're looking for a code file. Specifically,
+> /userland/lib/libc/arch/mips/syscalls-mips.S:84.
+
+>> 0/2
 
 3. We need those because kernel and user-level functions may have different dependencies. For instance, one needs <types.h>
  <lib.h> while the other needs <stdio.h>
 
+> No; you're referring to conditional compilation, which is simply a feature of 
+> C. Here, we're looking for "It's because we want to use them in both libc and 
+> the kernel."
+
+>> 0/2
+
 4. Configure will configure root path and debug options. So we need to re-run configure if we change the location of the directory or wish change the debug settings.
 
-5. Specific register architecture, endianness, size and accepted signals are possibly different. We might also want to have different declarations for performance concerns.
+> Correct.
+
+>> 2/2
+
+5. Specific register architecture, endianness, size and accepted signals are possibly different.
+
+> Correct. Note that in general, anything in assembly will be machine-
+> dependent.
+
+We might also want to have different declarations for performance concerns.
+
+> Not really. It's really a code-maintainability issue, so that you know what 
+> needs to be rewritten in a port.
+
+>> 1/2
 
 6. We can find the interface for trapframe in kern/arch/mips/include/trapframe.h. And the size is 37 * uint32_t = 148 bytes
 
+> Yes. Why?
+>
+> Answer: Because we need to store the state of 37 processor registers.
+
+>> 1/2
+
 7. When we switch pset or change the loaded libraries(files)
+
+> True. (though these are not 'libraries'; they're just files) Also: when you 
+> add/remove a device from the kernel config, or you changed other options.
+
+>> 1.5/2
 
 8. When the dependency changes in files
 
+> Yes. Could you be more specific?
+
+>> 0/2
+
 9. After we changed any c implementation, we should rum bmake to compile them. And if that succeeded, we can run bmake install to install the system.
+
+> Correct, though verbose.
+
+>> 2/2
 
 10. In this way, we have an easy mechanism to toggle assertion and inline. So we can easily debug array related code when needed and improve performance when we're done.
 
+> Be more specific -- the key insight here is that it allows you to define 
+> typed arrays.
+
+>> 0/2
+
 11. Add function declaration in lib (optional); add encapsulating command in menu.c; add hooks in command table and update menu description.
+
+> Correct. Note that the prototype will need to look something like:
+> static int cmd_helloworld(int nargs, char **args);
+
+>> 2/2
 
 12. Since the architecture is different in os161, the original implementation may not work in os161. We may also want to cut some flag options for os161
 
+> Correct.
+
+>> 2/2
+
 13. We hold the value in v0 register, move it to s0 and then exit the program. After that, we check the number, and print if execution failed or not.
+
+> Both correct, but you missed that it's stored in a0 to act as the argument 
+> for the exit system call.
+
+>> 1.5/2
 
 14.
 add kern/include/kern/syscall.h
@@ -33,5 +107,31 @@ add interface in unistd.h
 add menu entry (optional)
 After these, we should rerun config, bmake depend, bmake and bmake install to get the new system function working
 
+> We'd like to see a little more detail, I think, e.g.:
+>
+> add a new entry with unique number to kern/include/kern/syscall.h
+> add a case to the switch in syscall() in arch/mips/syscall/syscall.c
+> add implementation file in kern
+> add interface in unistd.h [this is good, though -- most people missed it]
+> add menu entry (optional) [possibly a good idea; I'll trust your discretion]
+
+>> 1.5/2
+
 15.
-start.S first setup the stack frame and register and then executes kmain. In kmain, boot is called, initializes some libraries and prints out basic information. kmain then call menu, which setup the menu, prints some menu details and wait for input. When we type in a command, it calls menu_execute, which then calls cmd_dispatch to start a new user program based on the cmdtable.
+start.S first setup the stack frame and register and then executes kmain.
+
+> also flushes the instruction cache and initializes the TLB.
+
+In kmain, boot is called, initializes some libraries and prints out basic information.
+
+> boot() does a little more than "initialize some libraries" -- it does 
+> initialization for RAM, threads, the hardclock, the virtual file system, the 
+> mainbus, pseudo-devices, VM, kprintf, and CPUs.
+
+kmain then call menu, which setup the menu, prints some menu details and wait for input. When we type in a command, it calls menu_execute, which then calls cmd_dispatch to start a new user program based on the cmdtable.
+
+> Otherwise correct.
+
+>> 2/2
+
+>>> 17.5/30 .ry
