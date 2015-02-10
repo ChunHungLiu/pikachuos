@@ -421,6 +421,7 @@ lkunit1(int nargs, char **args)
 	return 0;
 }
 
+// lock_do_i_hold should retun false after we release the lock.
 int
 lkunit2(int nargs, char **args)
 {
@@ -441,20 +442,7 @@ lkunit2(int nargs, char **args)
 	return 0;
 }
 
-static
-void
-cvunitthread(void *junk1, unsigned long junk2)
-{
-
-	(void)junk1;
-	(void)junk2;
-
-	lock_acquire(cvunitlock);
-	V(gatesem);
-	cv_wait(unitcv, cvunitlock);
-	KASSERT(lock_do_i_hold(cvunitlock));
-	lock_release(cvunitlock);
-}
+// CV shouldn't alternate lock status when signal is called.
 
 int
 cvunit1(int nargs, char **args)
@@ -474,6 +462,23 @@ cvunit1(int nargs, char **args)
 	kprintf("CV unit test 2 done\n");
 
 	return 0;
+}
+
+// CV should acquire lock after being signaled.
+
+static
+void
+cvunitthread(void *junk1, unsigned long junk2)
+{
+
+	(void)junk1;
+	(void)junk2;
+
+	lock_acquire(cvunitlock);
+	V(gatesem);
+	cv_wait(unitcv, cvunitlock);
+	KASSERT(lock_do_i_hold(cvunitlock));
+	lock_release(cvunitlock);
 }
 
 int
