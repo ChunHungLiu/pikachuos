@@ -1,0 +1,67 @@
+1.What happens to a thread when it exits (i.e., calls thread_exit())? What about when it sleeps?
+When a thread exits:
+- Detach the thread from our process;
+- Check thread's stack space. Probably for stack overflow;
+- Switch thread state to zombie and wait for thread destroy to clean up.
+
+When a thread sleeps:
+- make sure it's not in an interrupt
+- yields control to another thread
+- switch state to S_SLEEP
+
+2.What function(s) handle(s) a context switch?
+thread_switch() defined in thread.c and switchframe_switch() defined in switchframe.c
+
+3.What does it mean for a thread to be in each of the possible thread states?
+There are four thread states -
+S_RUN, thread running
+S_READY, thread is ready to run
+S_SLEEP, thread is sleeping
+S_ZOMB, zombie thread. Exited but not destroyed.
+
+4.What does it mean to turn interrupts off? How is this accomplished? Why is it important to turn off interrupts in the thread subsystem code?
+
+Turning interrupts off means that we're not calling interrupt handlers any more even if there's an interrupt. We could turn it off by calling splhigh, and set it back using spl(x). It's important to turn off interrupts for threads to prevent the case where we're interrupted while setting up a thread or context switch. For instance, we don't want to be interrupted while setting up the stack frame during a context switch.
+
+5.What happens when a thread wakes up another thread? How does a sleeping thread get to run again?
+We call thread_make_runnable() on the thread and remove it from the sleep queue. The thread could run again when we call thread_switch().
+
+
+Scheduler Questions
+6.What function(s) choose(s) the next thread to run?
+schedule() - thread.c L841
+
+7.How does it (do they) pick the next thread?
+It uses a round-robin policy by default, where each thread is executed in equal time-slice or until it blocks.
+
+8.What role does the hardware timer play in scheduling? What hardware independent function is called on a timer interrupt?
+The hardware timer will cause an interrupt which then transfer the control to hardclock(). The function eventually calls thread_yield() and do a context switch.
+
+Synchronization Questions
+9.Describe how wchan_sleep() and wchan_wakeone() are used to implement semaphores.
+We use wchan_sleep for P operation, which sleeps the thread until the semaphore gets
+greater than zero. We use wchan_wakeone() for V operation, which wakes up one thread waiting for the semaphore.
+
+10.Why does the lock API in OS/161 provide lock_do_i_hold(), but not lock_get_holder()
+Lock_get_holder could introduce the case where the holder of the lock changed when we wants to use the return value. Meanwhile, lock_do_i_hold() will essentially do the verification job in a more atomic fashion.
+
+
+Correctness Criteria
+Lock-
+1. After we acquire a lock, lock_do_i_hold should return true on the same thread.
+2. After we acquire a lock, another thread acquiring the lock should block
+3. After we acquire a lock, if we try to acquire it again on the same thread, we should hit an assertion failure
+4. Releasing a lock we don't have will cause an assertion failure
+5. If we acquire a lock and then release, it should unblock one thread waiting for the lock
+6. lock_do_i_hold should return false if we don't have the lock
+7. destroying an unreleased lock will cause an assertion failure.
+
+Condition Variable-
+1. Calling any function with a lock with don't hold will cause an assertion failure
+2. Calling cv_wait() will block the current thread
+3. Calling cv_wait() will unlock the associated lock
+4. Calling cv_signal() will wake up only one thread waiting for the cv
+5. Calling cv_signal() or broadcast when there's no waiting thread shouldn't do anything
+6. Calling cv_broadcast() will wake up all threads waiting for the cv
+7. After a thread is woken up, it should re-acquire the lock
+8. Calling broadcast and signal will not change the state of the lock.

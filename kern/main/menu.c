@@ -496,7 +496,10 @@ static const char *testmenu[] = {
 	"[sy1] Semaphore test                ",
 	"[sy2] Lock test             (1)     ",
 	"[sy3] CV test               (1)     ",
-	"[sy4] CV test #2            (1)     ",
+	"[ut1] Lock unit test #1             ",
+	"[ut2] Lock unit test #2             ",
+	"[ut3] CV unit test #1               ",
+	"[ut4] CV unit test #2               ",
 	"[fs1] Filesystem test               ",
 	"[fs2] FS read stress                ",
 	"[fs3] FS write stress               ",
@@ -527,6 +530,9 @@ static const char *mainmenu[] = {
 #if OPT_SYNCHPROBS
 	"[sp1] Elves                         ",
 	"[sp2] Air Balloon                   ",
+	"[sp3] Pingpong                      ",
+	"[sp4] TF Scheduling                 ",
+	"[sp5] Whalemating                   ",
 #if 0
 	"[sp3] Stoplight                     ",
 #endif
@@ -584,6 +590,9 @@ static struct {
 	/* in-kernel synchronization problem(s) */
 	{ "sp1",	elves },
 	{ "sp2",	airballoon },
+	{ "sp3",	pingpong },
+	{ "sp4",	tfs },
+	{ "sp5",	whalemating },
 #if 0
 	{ "sp3",	stoplight },
 #endif
@@ -615,6 +624,10 @@ static struct {
 	{ "sy2",	locktest },
 	{ "sy3",	cvtest },
 	{ "sy4",	cvtest2 },
+	{ "ut1",	lkunit1 },
+	{ "ut2",	lkunit2 },
+	{ "ut3",	cvunit1 },
+	{ "ut4",	cvunit2 },
 
 	/* file system assignment tests */
 	{ "fs1",	fstest },

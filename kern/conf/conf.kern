@@ -435,6 +435,9 @@ defoption synchprobs
 optfile   synchprobs  synchprobs/common.c
 optfile   synchprobs  synchprobs/elves.c
 optfile   synchprobs  synchprobs/airballoon.c
+optfile   synchprobs  synchprobs/semprob1.c
+optfile   synchprobs  synchprobs/semprob2.c
+optfile   synchprobs  synchprobs/whalemating.c
 
 ########################################
 #                                      #

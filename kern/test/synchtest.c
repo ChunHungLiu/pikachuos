@@ -311,6 +311,8 @@ cvtest(int nargs, char **args)
 #define NLOOPS 40
 static struct cv *testcvs[NCVS];
 static struct lock *testlocks[NCVS];
+static struct lock *cvunitlock;
+static struct cv *unitcv;
 static struct semaphore *gatesem;
 static struct semaphore *exitsem;
 
@@ -397,5 +399,105 @@ cvtest2(int nargs, char **args)
 	}
 
 	kprintf("cvtest2 done\n");
+	return 0;
+}
+
+// lock_do_i_hold should retun true after we acquire the lock.
+int
+lkunit1(int nargs, char **args)
+{
+
+	(void)nargs;
+	(void)args;
+
+	struct lock* test_lock;
+	test_lock = lock_create("test");
+
+	KASSERT(!lock_do_i_hold(test_lock));
+	
+	lock_destroy(test_lock);
+	kprintf("Lock unit test 1 done\n");
+
+	return 0;
+}
+
+int
+lkunit2(int nargs, char **args)
+{
+
+	(void)nargs;
+	(void)args;
+
+	struct lock* test_lock;
+	test_lock = lock_create("test");
+	lock_acquire(test_lock);
+
+	KASSERT(lock_do_i_hold(test_lock));
+	
+	lock_release(test_lock);
+	lock_destroy(test_lock);
+	kprintf("Lock unit test 2 done\n");
+
+	return 0;
+}
+
+static
+void
+cvunitthread(void *junk1, unsigned long junk2)
+{
+
+	(void)junk1;
+	(void)junk2;
+
+	lock_acquire(cvunitlock);
+	V(gatesem);
+	cv_wait(unitcv, cvunitlock);
+	KASSERT(lock_do_i_hold(cvunitlock));
+	lock_release(cvunitlock);
+}
+
+int
+cvunit1(int nargs, char **args)
+{
+
+	(void)nargs;
+	(void)args;
+
+	cvunitlock = lock_create("cvunitlock");
+	unitcv = cv_create("unitcv");
+
+	lock_acquire(cvunitlock);
+	cv_signal(unitcv, cvunitlock);
+	KASSERT(lock_do_i_hold(cvunitlock));
+	lock_release(cvunitlock);
+
+	kprintf("CV unit test 2 done\n");
+
+	return 0;
+}
+
+int
+cvunit2(int nargs, char **args)
+{
+	unsigned result;
+	(void)nargs;
+	(void)args;
+	cvunitlock = lock_create("cvunitlock");
+	gatesem = sem_create("gate_sm", 1);
+	unitcv = cv_create("unitcv");
+
+	P(gatesem);
+	result = thread_fork("cvunit1", NULL, cvunitthread, NULL, 0);
+	if (result) {
+		panic("cvunit1: thread_fork failed\n");
+	}
+
+	P(gatesem);
+	lock_acquire(cvunitlock);
+	cv_signal(unitcv, cvunitlock);
+	lock_release(cvunitlock);
+
+	kprintf("CV unit test 2 done!\n");
+
 	return 0;
 }

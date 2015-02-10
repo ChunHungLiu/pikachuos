@@ -102,6 +102,31 @@
  *
  */
 
+ /*
+ Synchronization method:
+ 1. Use an array of lock primatives, each one associated with a rope (a pair of 
+ airballon-ground index);
+
+ 2. For dandalion and marigold, the lock is acquired after they generate the 
+ random index. The lock associared with the selected rope is immediately acquired 
+  (we look the rope number up using a global map called hook_map);
+ 
+ 3. In this way, no 2 threads could check and modify the same rope at the
+ same time. Therefore, marigold and dandelion are synced;
+`
+ 4. For Lord Flowerkiller, we use a similar scheme, excpect that after generating
+ two random index, he will acquire 2 lock for each associated rope. Therefore, when
+ Lord Flowerkiller is at work, no other thread could touch the ropes he's swapping.
+ Also, if anyone is modifying a thread he tries to swap, he would wait until the
+ operation is done. Therefore, Lord Flowerkiller's operation is also synced.
+
+ 5. If Lord Flowerkiller generates 2 same indexes, it will cause a deadlock (we're 
+ requiring 2 same locks). To prevent this from happening, we double-check to make
+ sure that the 2 indexes are not the same;
+
+ 6. A semaphore is added so that main thread will exit cleanly
+ */
+
 #include <types.h>
 #include <lib.h>
 #include <wchan.h>
@@ -129,6 +154,10 @@ struct ground_stake {
 };
 
 // TODO: Add more globals as necessary
+
+struct semaphore *thread_lock;
+struct lock* rope_locks[NROPES];
+unsigned hook_map[NROPES];
 
 // Contains balloon <-> ground mapping
 struct balloon_hook balloon_hooks[NROPES];
@@ -177,6 +206,8 @@ init_mappings(void) {
 		balloon_ndx = i;
 		ground_ndx = array[i];
 
+		hook_map[array[i]] = i;
+
 		balloon_hooks[balloon_ndx].ground_ndx = ground_ndx;
 		balloon_hooks[balloon_ndx].is_mapped = true;
 
@@ -205,8 +236,11 @@ dandelion(void *data, unsigned long junk) {
 
 		// generate random balloon index to delete
 		balloon_ndx = random() % NROPES;
+
+		lock_acquire(rope_locks[balloon_ndx]);
 		if (!balloon_hooks[balloon_ndx].is_mapped) {
-			break;
+			lock_release(rope_locks[balloon_ndx]);
+			continue;
 		}
 
 		ground_ndx = balloon_hooks[balloon_ndx].ground_ndx;
@@ -223,7 +257,9 @@ dandelion(void *data, unsigned long junk) {
 		num_deleted_current = ++num_deleted;
 		print_deleted_mapping(DANDELION,
 		    balloon_ndx, ground_ndx, num_deleted_current);
+		lock_release(rope_locks[balloon_ndx]);
     }
+    V(thread_lock);
 }
 
 static
@@ -246,8 +282,12 @@ marigold(void *data, unsigned long junk) {
 
 		// generate random ground index to delete
 		ground_ndx = random() % NROPES;
+
+		// TODO, lock here. This may disappear, LOLZ
+		lock_acquire(rope_locks[hook_map[ground_ndx]]);
 		if (!ground_stakes[ground_ndx].is_mapped) {
-			break;
+			lock_release(rope_locks[hook_map[ground_ndx]]);
+			continue;
 		}
 		balloon_ndx = ground_stakes[ground_ndx].balloon_ndx;
 
@@ -259,7 +299,9 @@ marigold(void *data, unsigned long junk) {
 		num_deleted_current = ++num_deleted;
 		print_deleted_mapping(MARIGOLD,
 		    balloon_ndx, ground_ndx, num_deleted_current);
+		lock_release(rope_locks[hook_map[ground_ndx]]);
 	}
+	V(thread_lock);
 }
 
 static
@@ -268,7 +310,7 @@ KillerFlower(void *data, unsigned long junk){
 	// Local variables
 	unsigned gndx_a, gndx_b, i, mappings_to_change, temp;
 
-    	// Do you know why these are here?
+    // Do you know why these are here?
 	(void) data;
 	(void) junk;
 
@@ -279,6 +321,12 @@ KillerFlower(void *data, unsigned long junk){
 		//it is possible to get a no-op here, but don't count on those
 		gndx_a = random() % NROPES;
 		gndx_b = random() % NROPES;
+
+		if (gndx_a == gndx_b)
+			continue;
+
+		lock_acquire(rope_locks[hook_map[gndx_a]]);
+		lock_acquire(rope_locks[hook_map[gndx_b]]);
 
 		//swap the connections to balloon indices a and b if both
 		// ties have not been severed
@@ -297,8 +345,15 @@ KillerFlower(void *data, unsigned long junk){
 			ground_stakes[gndx_a].balloon_ndx =
 			    ground_stakes[gndx_b].balloon_ndx;
 			ground_stakes[gndx_b].balloon_ndx = temp;
+
+			temp = hook_map[gndx_a];
+			hook_map[gndx_a] = hook_map[gndx_b];
+			hook_map[gndx_b] = temp;
 		}
+		lock_release(rope_locks[hook_map[gndx_a]]);
+		lock_release(rope_locks[hook_map[gndx_b]]);
 	}
+	V(thread_lock);
 }
 
 int
@@ -310,17 +365,28 @@ airballoon(int nargs, char **args) {
 	init_mappings();
 	num_deleted = 0;
 
-	// TODO: you may add initialization/cleanup stuff here
+	thread_lock = sem_create("thread_lk", 2 * NTHREADS + 1);
+	for (i = 0; i < NROPES; i++){
+		// A rope is marked by air balloon hook number
+		rope_locks[i] = lock_create("rope_lk");
+	}
 
 	// Spawn FlowerKiller thread.
 	thread_fork_or_panic("FlowerKiller", NULL, KillerFlower, NULL, 0);
+	P(thread_lock);
 
 	// Spawn Dandelion's and Marigold's threads
 	for (i = 0; i < NTHREADS; i++) {
-        	thread_fork_or_panic("Dandelion", NULL, dandelion, NULL, 0);
-        	thread_fork_or_panic("Marigold", NULL, marigold, NULL, 0);
+ 		thread_fork_or_panic("Dandelion", NULL, dandelion, NULL, 0);
+		P(thread_lock);
+		thread_fork_or_panic("Marigold", NULL, marigold, NULL, 0);
+		P(thread_lock);
 	}
 
+	for (i = 0; i < 2 * NTHREADS + 1; i++) {
+		P(thread_lock);
+	}
+	
 	// cleanup
 	num_deleted = 0;
 

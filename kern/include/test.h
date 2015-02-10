@@ -39,6 +39,9 @@
 /* These are only actually available if OPT_SYNCHPROBS is set. */
 int elves(int, char**);
 int airballoon(int, char**);
+int pingpong(int, char**);
+int tfs(int, char**);
+int whalemating(int, char**);
 
 /*
  * Test code.
@@ -57,6 +60,11 @@ int semtest(int, char **);
 int locktest(int, char **);
 int cvtest(int, char **);
 int cvtest2(int, char **);
+
+int lkunit1(int, char **);
+int lkunit2(int, char **);
+int cvunit1(int, char **);
+int cvunit2(int, char **);
 
 /* filesystem tests */
 int fstest(int, char **);

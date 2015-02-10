@@ -738,7 +738,7 @@ thread_switch(threadstate_t newstate, struct wchan *wc, struct spinlock *lk)
  * ENTRYPOINT, DATA1, and DATA2 are passed through from thread_fork.
  *
  * Because new code comes here from inside the middle of
- * thread_switch, the beginning part of this function must match the
+ * wa, the beginning part of this function must match the
  * tail of thread_switch.
  */
 void

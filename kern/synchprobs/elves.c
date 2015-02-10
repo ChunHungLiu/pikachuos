@@ -46,6 +46,23 @@
  * for ALL the elves to finish before starting to dismiss them.
  */
 
+/* Synchronization method:
+ 1. A semaphore is used the supervisor thread so that it will wait for 
+ all elves to finish;
+
+ 2. Before we spawn any elf thread, we will run P on the semaphore and V
+ when we're done. This is similar to the scheme used for clean exit on
+ a thread;
+
+ 3. We use another semaphore for printing "thank you mesaage". An elf thread 
+ will acquire the lock before calling V and save the elf's number to a
+ global variable;
+
+ 4. The supervisor thread will then refer to the global varible, say
+ thank you, and release the lock. In this way, we make sure that supervisor
+ must wait for an elf to finish to say thank you.
+*/
+
 #include <types.h>
 #include <lib.h>
 #include <wchan.h>
@@ -76,6 +93,10 @@ static const char *tasks[NUM_TASKS] = {
 	"Perfected the plum sauce",
 };
 
+struct semaphore *print_lock;
+struct semaphore *elf_lock;
+struct semaphore *complete_lock;
+unsigned elf_complete;
 /*
  * Do not modify this!
  */
@@ -107,24 +128,45 @@ struct elf_args {
 
 static
 void
-elf(void *args, unsigned long junk)
+elf(void *args, unsigned long elf_num)
 {
 	struct elf_args *eargs = (struct elf_args *) args;
 
-	(void) junk; // suppress unused warnings
+	(void) elf_num; // suppress unused warnings
 	(void) eargs; // suppress unused warnings
 	// TODO
+	work(elf_num);
+
+	P(complete_lock);
+	elf_complete = elf_num;
+	V(elf_lock);
 }
 
 static
 void
-supervisor(void *args, unsigned long junk)
+supervisor(void *args, unsigned long num_elves)
 {
 	struct supervisor_args *sargs = (struct supervisor_args *) args;
+	unsigned long e;
+	int err=0;
 
-	(void) junk; // suppress unused warnings
+	(void) num_elves; // suppress unused warnings
 	(void) sargs; // suppress unused warnings
-	// TODO
+
+	for (e = 0; e < num_elves; e++) {
+		err = thread_fork("Elf thread", NULL, elf, NULL, e);
+		if (err != 0)
+			panic("elf: thread_fork failed: %s)\n", strerror(err));
+		P(elf_lock);
+	}
+
+	for (e = 0; e < num_elves; e++) {
+		P(elf_lock);
+		P(print_lock);
+		kprintf("Thank you for your work, Elf %d.\n", elf_complete);
+		V(print_lock);
+		V(complete_lock);
+	}
 }
 
 int
@@ -144,6 +186,14 @@ elves(int nargs, char **args)
 	(void) elf;
     (void) num_elves;
 	// TODO
+
+	print_lock = sem_create("print", 1);
+	elf_lock = sem_create("elf", num_elves);
+	complete_lock = sem_create("complete_lk", 1);
+	elf_complete = -1;
+
+	kprintf("Starting up Keebler Factory!\n");
+	supervisor(NULL, num_elves);
 
 	return 0;
 }
