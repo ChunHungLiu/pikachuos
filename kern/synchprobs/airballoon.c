@@ -206,7 +206,7 @@ dandelion(void *data, unsigned long junk) {
 		// generate random balloon index to delete
 		balloon_ndx = random() % NROPES;
 		if (!balloon_hooks[balloon_ndx].is_mapped) {
-			break;
+			continue;
 		}
 
 		ground_ndx = balloon_hooks[balloon_ndx].ground_ndx;
@@ -247,7 +247,7 @@ marigold(void *data, unsigned long junk) {
 		// generate random ground index to delete
 		ground_ndx = random() % NROPES;
 		if (!ground_stakes[ground_ndx].is_mapped) {
-			break;
+			continue;
 		}
 		balloon_ndx = ground_stakes[ground_ndx].balloon_ndx;
 
