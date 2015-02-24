@@ -1,5 +1,7 @@
 **.[oa]
-kern/compile/**
+kern/compile/*/*
+kern/compile/.keep_me
+!kern/compile/ASST2/files.mk
 kern/build**
 userland/**/build
 build/
