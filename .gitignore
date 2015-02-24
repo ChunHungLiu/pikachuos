@@ -1,0 +1,7 @@
+**.[oa]
+kern/compile/**
+kern/build**
+userland/**/build
+build/
+defs.mk
+**.depend*
