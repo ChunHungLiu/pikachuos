@@ -79,6 +79,9 @@ runprogram(char *progname)
 	proc_setas(as);
 	as_activate();
 
+	/* Intialize file table. */
+	filetable_init();
+
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
 	if (result) {
