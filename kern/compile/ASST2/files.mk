@@ -62,6 +62,7 @@ SRCS+=$(KTOP)/syscall/runprogram.c
 SRCS+=$(KTOP)/syscall/time_syscalls.c
 SRCS+=$(KTOP)/syscall/file.c
 SRCS+=$(KTOP)/syscall/file_syscalls.c
+SRCS+=$(KTOP)/syscall/proc_syscalls.c
 SRCS+=$(KTOP)/test/arraytest.c
 SRCS+=$(KTOP)/test/bitmaptest.c
 SRCS+=$(KTOP)/test/fstest.c

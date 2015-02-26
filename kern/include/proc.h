@@ -40,6 +40,7 @@
 #include <thread.h> /* required for struct threadarray */
 #include <file.h>
 #include <limits.h>
+#include <mips/trapframe.h>
 
 // Defined here to allow empty parent 
 #define INVALID_PID 0
@@ -106,5 +107,7 @@ struct addrspace *proc_setas(struct addrspace *);
 pid_t new_pid(void);
 
 // void proc_table_bootstrap(void);
+// dummy function for just running a process
+void proc_run(struct trapframe *tf);
 
 #endif /* _PROC_H_ */

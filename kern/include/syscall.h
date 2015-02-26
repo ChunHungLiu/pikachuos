@@ -60,5 +60,7 @@ int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 ssize_t sys_read(int filehandle, void *buf, size_t size, int *retval);
 ssize_t sys_write(int filehandle, const void *buf, size_t size, int *retval);
+int sys_close(int filehandle);
+int sys_fork(struct trapframe *tf, pid_t *retval);
 
 #endif /* _SYSCALL_H_ */

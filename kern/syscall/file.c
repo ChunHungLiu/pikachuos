@@ -87,3 +87,7 @@ int filetable_destroy() {
 	kfree(curproc->p_filetable);
 	return 0;
 }
+
+int filetable_copy() {
+	return 0;
+}

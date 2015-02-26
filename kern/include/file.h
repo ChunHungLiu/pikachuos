@@ -1,5 +1,6 @@
 #include <types.h>
 #include <limits.h>
+#include <synch.h>
 
 // everything should operate under curthread, we don't pass in any filetable pointer
 struct file_obj{
@@ -25,3 +26,5 @@ int filetable_init(void);
 int filetable_add(struct file_obj *file_ptr);
 int filetable_remove(int fd);
 int filetable_destroy(void);
+// make a shallow copy for the filetable. refcounts should be increased
+int filetable_copy(void);

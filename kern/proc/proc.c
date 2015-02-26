@@ -374,3 +374,8 @@ proc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+void proc_run(struct trapframe *tf) 
+{
+	(void) tf;
+}

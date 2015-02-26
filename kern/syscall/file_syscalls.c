@@ -31,13 +31,13 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 }
 
 int sys_close(int filehandle) {
-	file_obj *file = curproc->p_filetable[filehandle];
+	struct file_obj *file = curproc->p_filetable->filetable_files[filehandle];
 
 	KASSERT(file != NULL);
 
 	bool destroy;
 
-	lock_acquire(&file->file_lock);
+	lock_acquire(file->file_lock);
 	KASSERT(file->file_refcount > 0);
 	if (file->file_refcount > 1) {
 		file->file_refcount--;
@@ -46,10 +46,11 @@ int sys_close(int filehandle) {
 	else {
 		destroy = true;
 	}
-	lock_release(&file->file_lock);
+	lock_release(file->file_lock);
 
 	if (destroy) {
-		return vfs_close(file->file_node);
+		vfs_close(file->file_node);
+		return 0;
 	}
 
 	return 0;
