@@ -37,6 +37,7 @@ int filetable_init() {
 	for (int fd = 0; fd < OPEN_MAX; fd ++) {
 		curproc->p_filetable->filetable_files[fd] = NULL;
 	}
+	curproc->p_filetable->filetable_lock = lock_create("filetable_lock");
 	// open and init stdin stdout and stderr
 	char *console = (char *)"con:";
 	struct file_obj* stdin_ptr = file_open(console, O_RDONLY, 0);
@@ -51,23 +52,29 @@ int filetable_init() {
 
 // returns the file descriptor 
 int filetable_add(struct file_obj *file_ptr) {
+	lock_acquire(curproc->p_filetable->filetable_lock);
 	for (int fd = 0; fd < OPEN_MAX; fd ++) {
 		if (curproc->p_filetable->filetable_files[fd] == NULL){
 			curproc->p_filetable->filetable_files[fd] = file_ptr;
+			lock_release(curproc->p_filetable->filetable_lock);
 			return fd;
 		}
 	}
+	lock_release(curproc->p_filetable->filetable_lock);
 	return EMFILE;
 }
 
 int filetable_remove(int fd) {
-	// TODO: sync?
+	// TODO: better sync?
 	// TODO: sanity check
+	lock_acquire(curproc->p_filetable->filetable_lock);
+	
 	struct file_obj *file_ptr = curproc->p_filetable->filetable_files[fd];
 	vfs_close(file_ptr->file_node);
 	lock_destroy(file_ptr->file_lock);
 	kfree(file_ptr);
 	curproc->p_filetable->filetable_files[fd] = NULL;
+	lock_release(curproc->p_filetable->filetable_lock);
 	return 0;
 }
 

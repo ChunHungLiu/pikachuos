@@ -17,6 +17,7 @@ struct filetable
 {
 	// Arbitrary number for now
 	struct file_obj *filetable_files[OPEN_MAX];
+	struct lock *filetable_lock;
 };
 
 // init con: for all stds

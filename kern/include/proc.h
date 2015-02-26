@@ -39,6 +39,11 @@
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
 #include <file.h>
+#include <limits.h>
+
+// Defined here to allow empty parent 
+#define INVALID_PID 0
+#define KPROC_PID 1
 
 struct addrspace;
 struct vnode;
@@ -60,10 +65,21 @@ struct proc {
 	/* add more material here as needed */
 	struct filetable *p_filetable;
 
+	pid_t pid;
+	pid_t parent_pid;
+	// TODO arbitrary number for now
+	pid_t *child_pids[1000];
+
+	int exit_status;
+
+	struct cv *waitpid_cv;
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;
+
+/* Global table for all procs. */
+extern struct proc *proc_table[PID_MAX];
 
 /* Call once during system startup to allocate data structures. */
 void proc_bootstrap(void);
@@ -86,5 +102,9 @@ struct addrspace *proc_getas(void);
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *proc_setas(struct addrspace *);
 
+/* Get an unused pid. TODO: probably not safe*/
+pid_t new_pid(void);
+
+// void proc_table_bootstrap(void);
 
 #endif /* _PROC_H_ */

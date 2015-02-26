@@ -48,12 +48,16 @@
 #include <current.h>
 #include <addrspace.h>
 #include <vnode.h>
+#include <synch.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
+struct proc *proc_table[PID_MAX];
 
+// TODO: everything needs to be synced.
+struct lock *proc_table_lock;
 /*
  * Create a proc structure.
  */
@@ -82,7 +86,34 @@ proc_create(const char *name)
 	/* VFS fields */
 	proc->p_cwd = NULL;
 
+	if (proc_table[KPROC_PID] == NULL) {
+		proc->pid = KPROC_PID;
+	} else {
+		proc->pid = new_pid();		
+	}
+	proc->parent_pid = 0;
+	for (int i = 0; i < 1000; i++) {
+		proc->child_pids[i] = NULL;
+	}
+
+	proc->exit_status = 0;
+
+	proc->waitpid_cv = cv_create("waitpid_cv");
+
 	return proc;
+}
+
+pid_t new_pid() {
+	lock_acquire(proc_table_lock);
+	for (int pid = 1; pid < PID_MAX; pid++) {
+		if (proc_table[pid] == NULL){
+			lock_release(proc_table_lock);
+			return (pid_t)pid;
+		}
+	}
+	// TODO: OUT OF PID
+	lock_release(proc_table_lock);
+	return -1;
 }
 
 /*
@@ -168,6 +199,13 @@ proc_destroy(struct proc *proc)
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
 
+	cv_destroy(proc->waitpid_cv);
+	kfree(proc->child_pids);
+
+	lock_acquire(proc_table_lock);
+	proc_table[proc->pid] = NULL;
+	lock_release(proc_table_lock);	
+
 	kfree(proc->p_name);
 	kfree(proc);
 }
@@ -178,10 +216,15 @@ proc_destroy(struct proc *proc)
 void
 proc_bootstrap(void)
 {
+	for (int pid = 0; pid < PID_MAX; pid++) {
+		proc_table[pid] = NULL;
+	}
+	proc_table_lock = lock_create("proc_table_lock");
 	kproc = proc_create("[kernel]");
 	if (kproc == NULL) {
 		panic("proc_create for kproc failed\n");
 	}
+	proc_table[KPROC_PID] = kproc;
 }
 
 /*
