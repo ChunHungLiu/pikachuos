@@ -65,5 +65,6 @@ int sys_close(int filehandle);
 int sys_fork(struct trapframe *tf, pid_t *retval);
 void sys__exit(int exitcode);
 int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval);
+int sys_getpid(pid_t *retval);
 
 #endif /* _SYSCALL_H_ */

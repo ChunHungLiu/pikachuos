@@ -104,9 +104,9 @@ int filetable_copy(struct filetable *dest_fd) {
 	dest_fd->filetable_lock = lock_create("filetable_lock");
 	for (int fd = 0; fd < OPEN_MAX; fd ++) {
 		if (curft->filetable_files[fd] != NULL){
-			lock_acquire(dest_fd->filetable_files[fd]->file_lock);
-			dest_fd->filetable_files[fd]->file_refcount++;
-			lock_release(dest_fd->filetable_files[fd]->file_lock);
+			lock_acquire(curft->filetable_files[fd]->file_lock);
+			curft->filetable_files[fd]->file_refcount++;
+			lock_release(curft->filetable_files[fd]->file_lock);
 			dest_fd->filetable_files[fd] = curft->filetable_files[fd];
 		} else {
 			dest_fd->filetable_files[fd] = NULL;

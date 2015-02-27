@@ -16,9 +16,12 @@
 static void run_forked_proc(void *tf, unsigned long junk) 
 {
 	(void) junk;
+	struct trapframe kern_tf;
+
+	kern_tf = *(struct trapframe *)tf;
 
 	// TODO: any sync issue with tf?
-	enter_forked_process((struct trapframe *)tf);
+	enter_forked_process(&kern_tf);
 }
 
 int sys_fork(struct trapframe *tf, pid_t *retval) {
@@ -47,6 +50,8 @@ int sys_fork(struct trapframe *tf, pid_t *retval) {
 	name = kstrdup(curproc->p_name);
 
 	thread_fork(name, newproc ,run_forked_proc, (void *)tf, 0);
+
+	*retval = newproc->pid;
 
 	return 0;
 }
@@ -110,5 +115,10 @@ int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval) {
 	*retval = pid;
 	proc_destroy(child);
 	lock_release(proc_table_lock);
+	return 0;
+}
+
+int sys_getpid(pid_t *retval) {
+	*retval = curproc->pid;
 	return 0;
 }
