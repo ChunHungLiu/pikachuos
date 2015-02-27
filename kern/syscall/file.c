@@ -64,6 +64,30 @@ int filetable_add(struct file_obj *file_ptr) {
 	return EMFILE;
 }
 
+/* copies ft of curproc to dest_fd
+ * this is a shallow copy, we just increment the refcount
+ *
+*/
+// TODO: the logic here is kinda weird... how deos it play out with init?
+// TODO: should we model the interface on as_copy?
+int filetable_copy(struct filetable *dest_fd) {
+	struct filetable *curft = curproc->p_filetable;
+	dest_fd = kmalloc(sizeof(struct filetable));
+	// Not sure if this a good idea or not
+	dest_fd->filetable_lock = lock_create("filetable_lock");
+	for (int fd = 0; fd < OPEN_MAX; fd ++) {
+		if (curft->filetable_files[fd] != NULL){
+			lock_acquire(dest_fd->filetable_files[fd]->file_lock);
+			dest_fd->filetable_files[fd]->file_refcount++;
+			lock_release(dest_fd->filetable_files[fd]->file_lock);
+			dest_fd->filetable_files[fd] = curft->filetable_files[fd];
+		} else {
+			dest_fd->filetable_files[fd] = NULL;
+		}
+	}
+	return 0;
+}
+
 int filetable_remove(int fd) {
 	// TODO: better sync?
 	// TODO: sanity check
@@ -85,9 +109,5 @@ int filetable_destroy() {
 		}
 	}
 	kfree(curproc->p_filetable);
-	return 0;
-}
-
-int filetable_copy() {
 	return 0;
 }

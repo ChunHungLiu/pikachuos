@@ -61,7 +61,7 @@ struct lock *proc_table_lock;
 /*
  * Create a proc structure.
  */
-static
+// static
 struct proc *
 proc_create(const char *name)
 {
@@ -89,6 +89,7 @@ proc_create(const char *name)
 	if (proc_table[KPROC_PID] == NULL) {
 		proc->pid = KPROC_PID;
 	} else {
+		// probably a race condition here?
 		proc->pid = new_pid();		
 	}
 	proc->parent_pid = 0;
@@ -373,9 +374,4 @@ proc_setas(struct addrspace *newas)
 	proc->p_addrspace = newas;
 	spinlock_release(&proc->p_lock);
 	return oldas;
-}
-
-void proc_run(struct trapframe *tf) 
-{
-	(void) tf;
 }

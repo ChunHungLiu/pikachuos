@@ -110,4 +110,6 @@ pid_t new_pid(void);
 // dummy function for just running a process
 void proc_run(struct trapframe *tf);
 
+struct proc *proc_create(const char *name);
+
 #endif /* _PROC_H_ */

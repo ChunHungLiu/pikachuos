@@ -70,7 +70,14 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	 * Write this.
 	 */
 
-	(void)old;
+	// TODO: We'll definietly want to rewrite this in VM pset
+	newas->as_vbase1 = old->as_vbase1;
+	newas->as_pbase1 = old->as_pbase1;
+	newas->as_npages1 = old->as_npages1;
+	newas->as_vbase2 = old->as_vbase2;
+	newas->as_pbase2 = old->as_pbase2;
+	newas->as_npages2 = old->as_npages2;
+	newas->as_stackpbase = old->asstackpbase;
 
 	*ret = newas;
 	return 0;
