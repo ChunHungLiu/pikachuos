@@ -48,7 +48,6 @@
 #include <current.h>
 #include <addrspace.h>
 #include <vnode.h>
-#include <synch.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -92,12 +91,10 @@ proc_create(const char *name)
 		// probably a race condition here?
 		proc->pid = new_pid();		
 	}
-	proc->parent_pid = 0;
-	for (int i = 0; i < 1000; i++) {
-		proc->child_pids[i] = NULL;
-	}
+	proc->parent_pid = INVALID_PID;
 
-	proc->exit_status = 0;
+	proc->exitcode = 0;
+	proc->exited = false;
 
 	proc->waitpid_cv = cv_create("waitpid_cv");
 
@@ -119,6 +116,8 @@ pid_t new_pid() {
 
 /*
  * Destroy a proc structure.
+ * The function will actually make the proc vanish, don't care about
+ * children
  *
  * Note: nothing currently calls this. Your wait/exit code will
  * probably want to do so.
@@ -201,11 +200,10 @@ proc_destroy(struct proc *proc)
 	spinlock_cleanup(&proc->p_lock);
 
 	cv_destroy(proc->waitpid_cv);
-	kfree(proc->child_pids);
 
-	lock_acquire(proc_table_lock);
+	// Caller will need to acquire the lock
+	KASSERT(lock_do_i_hold(proc_table_lock));
 	proc_table[proc->pid] = NULL;
-	lock_release(proc_table_lock);	
 
 	kfree(proc->p_name);
 	kfree(proc);
