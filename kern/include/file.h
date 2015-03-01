@@ -11,8 +11,7 @@ struct file_obj{
 	int file_mode;
 };
 
-struct file_obj* file_open(char* filename, int flags, int mode);
-int file_close(int fd);
+struct file_obj* file_obj_create(struct vnode *vn, int flags);
 
 struct filetable
 {
@@ -23,7 +22,7 @@ struct filetable
 
 // init con: for all stds
 int filetable_init(void);
-int filetable_add(struct file_obj *file_ptr);
+int filetable_add(struct file_obj *file_ptr, int *retval);
 int filetable_remove(int fd);
 int filetable_destroy(void);
 // make a shallow copy for the filetable. refcounts should be increased
