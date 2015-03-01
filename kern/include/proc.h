@@ -41,6 +41,7 @@
 #include <file.h>
 #include <limits.h>
 #include <mips/trapframe.h>
+#include <synch.h>
 
 // Defined here to allow empty parent 
 #define INVALID_PID 0
@@ -68,10 +69,9 @@ struct proc {
 
 	pid_t pid;
 	pid_t parent_pid;
-	// TODO arbitrary number for now
-	pid_t *child_pids[1000];
 
-	int exit_status;
+	int exitcode;
+	bool exited;
 
 	struct cv *waitpid_cv;
 };
@@ -81,6 +81,7 @@ extern struct proc *kproc;
 
 /* Global table for all procs. */
 extern struct proc *proc_table[PID_MAX];
+extern struct lock *proc_table_lock;
 
 /* Call once during system startup to allocate data structures. */
 void proc_bootstrap(void);

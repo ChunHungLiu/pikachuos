@@ -10,13 +10,14 @@
 #include <syscall.h>
 #include <test.h>
 #include <vnode.h>
+#include <copyinout.h>
 
 // TODO: this is getting pretty sketchy
 static void run_forked_proc(void *tf, unsigned long junk) 
 {
 	(void) junk;
 
-	// TODO: any catch with tf?
+	// TODO: any sync issue with tf?
 	enter_forked_process((struct trapframe *)tf);
 }
 
@@ -47,5 +48,67 @@ int sys_fork(struct trapframe *tf, pid_t *retval) {
 
 	thread_fork(name, newproc ,run_forked_proc, (void *)tf, 0);
 
+	return 0;
+}
+
+void sys__exit(int exitcode) {
+	(void) exitcode;
+	lock_acquire(proc_table_lock);
+
+	// orphan all children, should be done no matter what
+	for (int i = 0; i < PID_MAX; i++) {
+		// Found a children
+		if (proc_table[i] != NULL && proc_table[i]->parent_pid == curproc->pid) {
+			proc_table[i]->parent_pid = INVALID_PID;
+			// weird case, parent doesn't wait, but exited later
+			if (proc_table[i]->exited) {
+				proc_destroy(proc_table[i]);
+			}
+		}
+	}
+
+	// set exitcode stuff is probably unnecessary for orphan
+	if (curproc->parent_pid == INVALID_PID) {
+		// Parent is dead, suicide
+		proc_destroy(curproc);
+	} else {
+		// do fancy shit and don't destroy itself
+		// it should be destroyed by parent in waitpid
+
+		// TODO: This is probably not a good design
+		curproc->exited = true;
+		curproc->exitcode = exitcode;
+		// Wake up parent
+		cv_signal(curproc->waitpid_cv, proc_table_lock);
+	}
+
+	lock_release(proc_table_lock);
+}
+
+int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval) {
+	(void) pid;
+	(void) returncode;
+	(void) flags;
+	(void) retval;
+
+	// TODO: a lot of sanity checks for this one.
+	
+	// TODO: what's the _MKWAIT_EXIT stuff?
+	lock_acquire(proc_table_lock);
+	struct proc *child = proc_table[pid];
+
+	if (!child->exited) {
+		// We always wait on the child's cv
+		cv_wait(child->waitpid_cv, proc_table_lock);
+		KASSERT(child->exited);
+	}
+
+	if (returncode != NULL) {
+		// Give back returncode
+		copyout(&child->exitcode,returncode, sizeof(int));
+	}
+	*retval = pid;
+	proc_destroy(child);
+	lock_release(proc_table_lock);
 	return 0;
 }
