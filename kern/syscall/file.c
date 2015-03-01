@@ -52,12 +52,12 @@ int filetable_init() {
 	}
 	curproc->p_filetable->filetable_lock = lock_create("filetable_lock");
 	// open and init stdin stdout and stderr
-	char *console = (char *)"con:";
+	const char *console = "con:";
 	int stdin, stdout, stderr;
 	// We should do something with error values
-	sys_open(console, O_RDONLY, 0, &stdin);
-	sys_open(console, O_WRONLY, 0, &stdout);
-	sys_open(console, O_WRONLY, 0, &stderr);
+	err = sys_open(console, O_RDONLY, 0, &stdin);
+	err = sys_open(console, O_WRONLY, 0, &stdout);
+	err = sys_open(console, O_WRONLY, 0, &stderr);
 	// Sanity check for stdin/out/err fd. TODO: More checks?
 	// There shouldn't be any other open file descriptors when this is called
 	KASSERT(stdin == 0);

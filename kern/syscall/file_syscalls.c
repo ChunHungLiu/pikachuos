@@ -15,7 +15,7 @@
  * Open:
  */
 int sys_open(const char* user_filename, int flags, int mode, int *retval) {
-	kprintf("Opening %s with flags %x", user_filename, flags);
+	kprintf("Opening %s with flags %x\n", user_filename, flags);
 
 	struct vnode *vn;
 	struct file_obj *file;
@@ -25,15 +25,17 @@ int sys_open(const char* user_filename, int flags, int mode, int *retval) {
 
 	// TODO: Error checking
 
-	// Copy file name into kernel space - vfs_* uses non-const (mutable?)
+	// Copy file name - vfs_* may change name
+	// TODO: Should this use copyinstr? 
 	int len = strlen(user_filename);
 	filename = kmalloc(len + 1);
 	if (!filename)
 		return ENOMEM;
-	copyinstr((const_userptr_t) user_filename, filename, len, NULL);	// Lazy. Should check if copy successful
+	strcpy(filename, user_filename);
 
 	// Open file
 	err = vfs_open(filename, flags, mode, &vn);
+	kfree(filename);
 	if (err)
 		return err;
 
