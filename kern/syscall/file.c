@@ -28,10 +28,10 @@ struct file_obj* file_obj_create(struct vnode *vn, int flags) {
 	file->file_node = vn;
 	file->file_lock = lock_create("file lock");
 	file->pos = 0;
-	file->file_refcount = flags & O_ACCMODE;
-	file->file_mode = 0;
+	file->file_refcount = 1;
+	file->file_mode = flags & O_ACCMODE;
 
-	// No lock? Assume we're out of memory. TODO: what else could happen?
+	// No lock? Assume we're out of memory. TODO: what dbelse could happen?
 	if (!file->file_lock) {
 		kfree(file);
 		return NULL;

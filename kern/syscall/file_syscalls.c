@@ -10,13 +10,13 @@
 #include <syscall.h>
 #include <test.h>
 #include <copyinout.h>
+#include <uio.h>
+#include <vnode.h>
 
 /*
  * Open:
  */
 int sys_open(const char* user_filename, int flags, int mode, int *retval) {
-	kprintf("Opening %s with flags %x\n", user_filename, flags);
-
 	struct vnode *vn;
 	struct file_obj *file;
 	char* filename;
@@ -54,22 +54,70 @@ int sys_open(const char* user_filename, int flags, int mode, int *retval) {
 
 int sys_read(int filehandle, void *buf, size_t size, int *retval)
 {
-	kprintf("Hello sys_read");
-	(void)buf;
-	(void)size;
-	(void)filehandle;
-	*retval = 0;
-	return 0;
+	// TODO: Synchronize
+
+	struct file_obj **ft = curproc->p_filetable->filetable_files;
+
+	if (filehandle < 0 || filehandle > OPEN_MAX || ft[filehandle] == NULL)
+		return EBADF;
+	struct file_obj *file = ft[filehandle];
+
+	// Get info
+	if (file->file_mode != O_RDONLY && file->file_mode != O_RDWR) {
+		return EPERM;
+	}
+
+	// Create uio object for handing reading
+	struct uio read_uio;
+	struct iovec iov;
+
+	iov.iov_ubase = buf;
+	iov.iov_len = size;
+	read_uio.uio_iov = &iov;
+	read_uio.uio_iovcnt = 1;
+	read_uio.uio_offset = file->pos;
+	read_uio.uio_resid = size;
+	read_uio.uio_segflg = UIO_USERSPACE;
+	read_uio.uio_rw = UIO_READ;
+	read_uio.uio_space = proc_getas();
+
+	*retval = VOP_READ(file->file_node, &read_uio);
+
+	return size - read_uio.uio_resid;
 }
 
 int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 {
-	kprintf("Hello sys_write");
-	(void)buf;
-	(void)size;
-	(void)filehandle;
-	*retval = 0;
-	return 0;
+	// TODO: Synchronize
+
+	struct file_obj **ft = curproc->p_filetable->filetable_files;
+
+	if (filehandle < 0 || filehandle > OPEN_MAX || ft[filehandle] == NULL)
+		return EBADF;
+	struct file_obj *file = ft[filehandle];
+
+	// Get info
+	if (file->file_mode != O_WRONLY && file->file_mode != O_RDWR) {
+		return EPERM;
+	}
+
+	// Create uio object for handling reading
+	struct uio write_uio;
+	struct iovec iov;
+
+	iov.iov_ubase = (void *) buf;
+	iov.iov_len = size;
+	write_uio.uio_iov = &iov;
+	write_uio.uio_iovcnt = 1;
+	write_uio.uio_offset = file->pos;
+	write_uio.uio_resid = size;
+	write_uio.uio_segflg = UIO_USERSPACE;
+	write_uio.uio_rw = UIO_WRITE;
+	write_uio.uio_space = proc_getas();
+
+	*retval = VOP_WRITE(file->file_node, &write_uio);
+
+	return size - write_uio.uio_resid;
 }
 
 int sys_close(int filehandle) {
