@@ -54,13 +54,15 @@ int sys_open(const char* user_filename, int flags, int mode, int *retval) {
 
 int sys_read(int filehandle, void *buf, size_t size, int *retval)
 {
-	// TODO: Synchronize
-
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
+	struct file_obj *file;
+	int bytes_read = 0;
 
 	if (filehandle < 0 || filehandle > OPEN_MAX || ft[filehandle] == NULL)
 		return EBADF;
-	struct file_obj *file = ft[filehandle];
+	file = ft[filehandle];
+
+	lock_acquire(file->file_lock);
 
 	// Get info
 	if (file->file_mode != O_RDONLY && file->file_mode != O_RDWR) {
@@ -83,18 +85,25 @@ int sys_read(int filehandle, void *buf, size_t size, int *retval)
 
 	*retval = VOP_READ(file->file_node, &read_uio);
 
-	return size - read_uio.uio_resid;
+	bytes_read = size - read_uio.uio_resid;
+	file->pos += bytes_read;
+
+	lock_release(file->file_lock);
+
+	return bytes_read;
 }
 
 int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 {
-	// TODO: Synchronize
-
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
+	struct file_obj *file;
+	int bytes_written;
 
 	if (filehandle < 0 || filehandle > OPEN_MAX || ft[filehandle] == NULL)
 		return EBADF;
-	struct file_obj *file = ft[filehandle];
+	file = ft[filehandle];
+
+	lock_acquire(file->file_lock);
 
 	// Get info
 	if (file->file_mode != O_WRONLY && file->file_mode != O_RDWR) {
@@ -116,8 +125,12 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 	write_uio.uio_space = proc_getas();
 
 	*retval = VOP_WRITE(file->file_node, &write_uio);
+	bytes_written = size - write_uio.uio_resid;
+	file->pos += bytes_written;
 
-	return size - write_uio.uio_resid;
+	lock_release(file->file_lock);
+
+	return bytes_written;
 }
 
 int sys_close(int filehandle) {
