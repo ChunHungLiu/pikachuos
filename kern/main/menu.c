@@ -128,12 +128,6 @@ common_prog(int nargs, char **args)
 		return ENOMEM;
 	}
 
-	// BEGIN TEMP CODE
-	// This will wait for the forked thread to exit before continuing to run the kernel
-	cmd_progthread(args, nargs);
-
-	// END TEMP CODE
-
 	result = thread_fork(args[0] /* thread name */,
 			proc /* new process */,
 			cmd_progthread /* thread function */,
