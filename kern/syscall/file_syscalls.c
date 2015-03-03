@@ -138,7 +138,7 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 	return bytes_written;
 }
 
-off_t lseek(int fd, off_t pos, int whence) {
+off_t sys_lseek(int fd, off_t pos, int whence) {
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
 	struct file_obj *file;
 	off_t new_pos;
@@ -172,6 +172,13 @@ off_t lseek(int fd, off_t pos, int whence) {
 
 	return new_pos;
 
+}
+
+int sys_dup2(int oldfd, int newfd) {
+	(void) oldfd;
+	(void) newfd;
+
+	return 0;
 }
 
 int sys_close(int filehandle) {
