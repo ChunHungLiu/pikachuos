@@ -72,6 +72,12 @@ void sys__exit(int exitcode) {
 		}
 	}
 
+	/*
+	 * Detach from our process. You might need to move this action
+	 * around, depending on how your wait/exit works.
+	 */
+	proc_remthread(curthread);
+
 	// set exitcode stuff is probably unnecessary for orphan
 	if (curproc->parent_pid == INVALID_PID) {
 		// Parent is dead, suicide
