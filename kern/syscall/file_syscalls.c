@@ -14,9 +14,15 @@
 #include <uio.h>
 #include <vnode.h>
 #include <stat.h>
+#include <endian.h>
 
-/*
- * Open:
+/**
+ * Opens the file/device/kernel object named by the pathname 'filename'. 'flags' specifies how to open the file.
+ * @param  user_filename path to the file to be opened
+ * @param  flags         flags for how to open the file
+ * @param  mode          currently unused
+ * @param  retval        pointer to store the file descriptor for the new file
+ * @return               0 if successful, otherwise the error
  */
 int sys_open(const char* user_filename, int flags, int mode, int *retval) {
 	struct vnode *vn;
@@ -54,6 +60,16 @@ int sys_open(const char* user_filename, int flags, int mode, int *retval) {
 	return 0;
 }
 
+
+/**
+ * Reads 'size' bytes from the file represented by 'filehandle' to 'buf'.
+ * Stores the number of bytes read in 'retval'
+ * @param  filehandle file descriptor to read from
+ * @param  buf        buffer to read to
+ * @param  size       number of bytes to read
+ * @param  retval     pointer to the place to store the number of bytes read
+ * @return            0 if successful, otherwise the error code
+ */
 int sys_read(int filehandle, void *buf, size_t size, int *retval)
 {
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
@@ -95,6 +111,15 @@ int sys_read(int filehandle, void *buf, size_t size, int *retval)
 	return bytes_read;
 }
 
+/**
+ * Writes 'size' bytes from 'buf' to the file represented by 'filehandle'.
+ * Stores the number of bytes written in 'retval'
+ * @param  filehandle file descriptor to write to
+ * @param  buf        buffer to write from
+ * @param  size       number of bytes to write
+ * @param  retval     pointer to the place to store the number of bytes written
+ * @return            0 if successful, otherwise the error code
+ */
 int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 {
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
@@ -139,11 +164,37 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 	return bytes_written;
 }
 
-off_t sys_lseek(int fd, off_t pos, int whence) {
+/**
+ * Wrapper for lseek when only 32-bit values can be passed in (e.g. in syscall.c)
+ * @param  fd     file descriptor to seek
+ * @param  pos1   upper (lower) 32 bits of the offset
+ * @param  pos2   lower (upper) 32 bits of the offset
+ * @param  whence position to seek from
+ * @param  retval pointer to the place to store the new position
+ * @return        0 if successful, otherwise the error code
+ */
+off_t sys_lseek_32(int fd, int pos1, int pos2, int whence, int *retval) {
+	uint64_t pos;
+	join32to64(pos1, pos2, &pos);
+	return sys_lseek(fd, pos, whence, retval);
+}
+
+
+/**
+ * Seek 'fd' to the position specified by 'pos' from position specified by
+ * 'whence'
+ * @param  fd     file descriptor to seek
+ * @param  pos    number of bytes to shift the position
+ * @param  whence position to seek from
+ * @param  retval pointer to the place to store the new position
+ * @return        0 if successful, otherwise the error code
+ */
+off_t sys_lseek(int fd, off_t pos, int whence, int *retval) {
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
 	struct file_obj *file;
-	off_t new_pos;
 	struct stat f_stat;
+
+	kprintf("aasdf\n");
 
 	if (fd < 0 || fd > OPEN_MAX || ft[fd] == NULL)
 		return EBADF;
@@ -174,14 +225,25 @@ off_t sys_lseek(int fd, off_t pos, int whence) {
 	if (file->pos < 0)
 		return EINVAL;
 
-	new_pos = file->pos;
+	*retval = file->pos;
 
 	lock_release(file->file_lock);
 
-	return new_pos;
+	return 0;
 }
 
-int sys_dup2(int oldfd, int newfd) {
+/**
+ * Clones 'oldfd' onto 'newfd'. If 'newfd' is already open file, that file is
+ * closed. Stores return value in retval
+ * @param  oldfd file descriptor that is to be cloned (i.e. 'newfd' will refer
+ *               to the same file as oldfd after this is done)
+ * @param  newfd file descriptor pointing to the file that will be replaced
+ *               by the file for 'oldfd'
+ * @param retval pointer to the place to store the return value (either newfd
+ *               or -1)
+ * @return       0 if successful, otherwise the error code
+ */
+int sys_dup2(int oldfd, int newfd, int *retval) {
 	(void) oldfd;
 	(void) newfd;
 
@@ -190,12 +252,14 @@ int sys_dup2(int oldfd, int newfd) {
 
 	// Check that all file descriptors are in range and the old one is active
 	if (oldfd < 0 || oldfd > OPEN_MAX || ft[oldfd] == NULL ||
-		newfd < 0 || newfd > OPEN_MAX)
+		newfd < 0 || newfd > OPEN_MAX) {
+		*retval = -1;
 		return EBADF;
+	}
 	old_file = ft[oldfd];
 
 	if (ft[newfd] != NULL)
-		sys_close(newfd);
+		sys_close(newfd, NULL);
 
 	lock_acquire(curproc->p_filetable->filetable_lock);
 
@@ -203,10 +267,18 @@ int sys_dup2(int oldfd, int newfd) {
 
 	lock_release(curproc->p_filetable->filetable_lock);
 
+	*retval = newfd;
 	return 0;
 }
 
-int sys_close(int filehandle) {
+
+/**
+ * Closes the file specified by 'filehandle'
+ * @param  filehandle file descriptor for the file to be closed
+ * @param  retval     pointer to the location to store the return value
+ * @return            should always return 0
+ */
+int sys_close(int filehandle, int *retval) {
 	struct file_obj *file = curproc->p_filetable->filetable_files[filehandle];
 
 	KASSERT(file != NULL);
@@ -220,8 +292,9 @@ int sys_close(int filehandle) {
 	} else {
 		lock_release(file->file_lock);
 		filetable_remove(filehandle);
-		return 0;
 	}
 
+	if (retval)		// Handle retval = NULL
+		*retval = 0;
 	return 0;
 }

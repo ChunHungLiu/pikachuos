@@ -122,8 +122,16 @@ syscall(struct trapframe *tf)
 	    err = sys_write(tf->tf_a0, (userptr_t)tf->tf_a1, tf->tf_a2, &retval);
 	    break;
 
+	    case SYS_lseek:	// fd         pos1       pos2       whence
+	    err = sys_lseek_32(tf->tf_a0, tf->tf_a1, tf->tf_a2, tf->tf_a3, &retval);
+	    break;
+
+	    case SYS_dup2:
+	    err = sys_dup2(tf->tf_a0, tf->tf_a1, &retval);
+	    break;
+
 	    case SYS_close:
-	    err = sys_close(tf->tf_a0);
+	    err = sys_close(tf->tf_a0, &retval);
 	    break;
 
 	    case SYS_fork:
