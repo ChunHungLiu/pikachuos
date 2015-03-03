@@ -61,6 +61,7 @@ int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 int sys_open(const char* filename, int flags, int mode, int *retval);
 ssize_t sys_read(int filehandle, void *buf, size_t size, int *retval);
 ssize_t sys_write(int filehandle, const void *buf, size_t size, int *retval);
+off_t lseek(int fd, off_t pos, int whence);
 int sys_close(int filehandle);
 int sys_fork(struct trapframe *tf, pid_t *retval);
 void sys__exit(int exitcode);

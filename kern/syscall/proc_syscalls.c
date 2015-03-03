@@ -62,10 +62,10 @@ void sys__exit(int exitcode) {
 
 	// orphan all children, should be done no matter what
 	for (int i = 0; i < PID_MAX; i++) {
-		// Found a children
+		// Found a child
 		if (proc_table[i] != NULL && proc_table[i]->parent_pid == curproc->pid) {
 			proc_table[i]->parent_pid = INVALID_PID;
-			// weird case, parent doesn't wait, but exited later
+			// weird case, child exited, parent doesn't wait, but exited later
 			if (proc_table[i]->exited) {
 				proc_destroy(proc_table[i]);
 			}
@@ -110,7 +110,7 @@ int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval) {
 
 	if (returncode != NULL) {
 		// Give back returncode
-		copyout(&child->exitcode,returncode, sizeof(int));
+		copyout(&child->exitcode, returncode, sizeof(int));
 	}
 	*retval = pid;
 	proc_destroy(child);

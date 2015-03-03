@@ -1,6 +1,7 @@
 #include <types.h>
 #include <kern/errno.h>
 #include <kern/fcntl.h>
+#include <kern/seek.h>
 #include <lib.h>
 #include <proc.h>
 #include <current.h>
@@ -99,9 +100,13 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 	struct file_obj *file;
 	int bytes_written;
 
+	//lock_acquire(curproc->p_filetable->filetable_lock);
+
 	if (filehandle < 0 || filehandle > OPEN_MAX || ft[filehandle] == NULL)
 		return EBADF;
 	file = ft[filehandle];
+
+	//lock_release(curproc->p_filetable->filetable_lock);
 
 	lock_acquire(file->file_lock);
 
@@ -131,6 +136,42 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 	lock_release(file->file_lock);
 
 	return bytes_written;
+}
+
+off_t lseek(int fd, off_t pos, int whence) {
+	struct file_obj **ft = curproc->p_filetable->filetable_files;
+	struct file_obj *file;
+	off_t new_pos;
+
+	if (fd < 0 || fd > OPEN_MAX || ft[fd] == NULL)
+		return EBADF;
+	file = ft[fd];
+
+	lock_acquire(file->file_lock);
+
+	if (!VOP_ISSEEKABLE(file->file_node))
+		return ESPIPE;
+
+	switch(whence) {
+		case SEEK_SET:
+			file->pos = pos;
+			break;
+		case SEEK_CUR:
+			file->pos += pos;
+			break;
+		case SEEK_END:
+			panic("SEEK_END: Unimplemememented");
+			break;
+		default:
+			return EINVAL;
+	}
+
+	new_pos = file->pos;
+
+	lock_release(file->file_lock);
+
+	return new_pos;
+
 }
 
 int sys_close(int filehandle) {
