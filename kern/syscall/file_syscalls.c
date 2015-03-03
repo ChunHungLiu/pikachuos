@@ -13,6 +13,7 @@
 #include <copyinout.h>
 #include <uio.h>
 #include <vnode.h>
+#include <stat.h>
 
 /*
  * Open:
@@ -142,6 +143,7 @@ off_t sys_lseek(int fd, off_t pos, int whence) {
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
 	struct file_obj *file;
 	off_t new_pos;
+	struct stat f_stat;
 
 	if (fd < 0 || fd > OPEN_MAX || ft[fd] == NULL)
 		return EBADF;
@@ -160,23 +162,46 @@ off_t sys_lseek(int fd, off_t pos, int whence) {
 			file->pos += pos;
 			break;
 		case SEEK_END:
-			panic("SEEK_END: Unimplemememented");
+			// Get file stats
+			VOP_STAT(file->file_node, &f_stat);
+
+			file->pos = f_stat.st_size + pos;
 			break;
 		default:
 			return EINVAL;
 	}
+
+	if (file->pos < 0)
+		return EINVAL;
 
 	new_pos = file->pos;
 
 	lock_release(file->file_lock);
 
 	return new_pos;
-
 }
 
 int sys_dup2(int oldfd, int newfd) {
 	(void) oldfd;
 	(void) newfd;
+
+	struct file_obj **ft = curproc->p_filetable->filetable_files;
+	struct file_obj *old_file;
+
+	// Check that all file descriptors are in range and the old one is active
+	if (oldfd < 0 || oldfd > OPEN_MAX || ft[oldfd] == NULL ||
+		newfd < 0 || newfd > OPEN_MAX)
+		return EBADF;
+	old_file = ft[oldfd];
+
+	if (ft[newfd] != NULL)
+		sys_close(newfd);
+
+	lock_acquire(curproc->p_filetable->filetable_lock);
+
+	ft[newfd] = old_file;
+
+	lock_release(curproc->p_filetable->filetable_lock);
 
 	return 0;
 }
@@ -186,16 +211,17 @@ int sys_close(int filehandle) {
 
 	KASSERT(file != NULL);
 
-	// Decrease refcounts, and close if 0
+	// Decrease refcounts, and close & remove if 0
 	lock_acquire(file->file_lock);
 	KASSERT(file->file_refcount > 0);
 	if (file->file_refcount > 1) {
 		file->file_refcount--;
+		lock_release(file->file_lock);
 	} else {
-		vfs_close(file->file_node);
+		lock_release(file->file_lock);
+		filetable_remove(filehandle);
 		return 0;
 	}
-	lock_release(file->file_lock);
 
 	return 0;
 }
