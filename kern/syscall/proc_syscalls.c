@@ -131,3 +131,127 @@ int sys_getpid(pid_t *retval) {
 	*retval = curproc->pid;
 	return 0;
 }
+
+int sys_execv(char* progname, char** args) {
+	int result;
+	int *args_len;
+	size_t len;
+	char *temp;
+	char **kern_args;
+	int nargs = 0;
+	userptr_t *usr_argv = NULL;
+	char *kern_progname = kmalloc(PATH_MAX);
+	args_len = kmalloc(sizeof(int) * 1024);
+	temp = kmalloc(sizeof(char) * ARG_MAX);
+
+	// Figure out nargs, and the length for each arg string
+	while(args[nargs] != NULL) {
+		copyinstr((userptr_t)args[nargs], temp, ARG_MAX, &len);
+		args_len[nargs] = len ;
+        nargs += 1;
+    }
+    kfree(temp);
+
+    kern_args = kmalloc(sizeof(char*) * nargs);
+
+	// Go through args and copy everything over to kern_args using copyinstr
+	for (int i = 0; i < nargs; i++) {
+		// This is causing issue
+		kern_args[i] = kmalloc(sizeof(char) * args_len[i]);
+		if (kern_args[i] == NULL) {
+			kprintf("Memroy alloc failed on %d. \n", i);
+			KASSERT(NULL);
+		}
+        copyinstr((userptr_t)args[i], kern_args[i], ARG_MAX, NULL);
+	}
+
+	// This is from runprogram 
+	struct addrspace *as;
+	struct vnode *v;
+	vaddr_t entrypoint, stackptr;
+
+	result = copyinstr((userptr_t)progname, kern_progname, PATH_MAX, NULL);
+	if (result) {
+		kfree(kern_progname);
+		return result;
+	}
+
+	/* Open the file. */
+	result = vfs_open(kern_progname, O_RDONLY, 0, &v);
+	if (result) {
+		return result;
+	}
+
+	// Blow up the current addrspace
+	as_destroy(curproc->p_addrspace);
+    curproc->p_addrspace = NULL;
+
+	/* We should be a new process. */
+	KASSERT(proc_getas() == NULL);
+
+	/* Create a new address space. */
+	as = as_create();
+	if (as == NULL) {
+		vfs_close(v);
+		return ENOMEM;
+	}
+
+	/* Switch to it and activate it. */
+	proc_setas(as);
+	as_activate();
+
+	/* Intialize file table, not needed for execv */
+	// filetable_init();
+
+	/* Load the executable. */
+	result = load_elf(v, &entrypoint);
+	if (result) {
+		/* p_addrspace will go away when curproc is destroyed */
+		vfs_close(v);
+		return result;
+	}
+
+	/* Done with the file now. */
+	vfs_close(v);
+
+	/* Define the user stack in the address space */
+	result = as_define_stack(as, &stackptr);
+	if (result) {
+		/* p_addrspace will go away when curproc is destroyed */
+		return result;
+	}
+
+	// Clear space for arg pointers +1 for NULL terminator
+    stackptr -= (sizeof(char*)) * (nargs + 1);
+
+    // Convenience method for indexing
+    usr_argv = (userptr_t*)stackptr;
+
+    for(int i = 0; i < nargs; i++ ) {
+    	// Clear out space for an arg string
+        stackptr -= sizeof(char) * (strlen(kern_args[i]) + 1);
+        // Assign the string's pointer to usr_argv
+        usr_argv[i] = (userptr_t)stackptr;
+        // Copy over string
+        copyout(kern_args[i], usr_argv[i],
+        	sizeof(char) * (strlen(kern_args[i]) + 1) );
+    }
+
+    // NULL terminate usr_argv
+    usr_argv[nargs] = NULL;
+
+    // Free memory
+    for(int i = 0; i < nargs; i++) {
+        kfree(kern_args[i]);
+    }
+    kfree(kern_args);
+
+	/* Warp to user mode. */
+	enter_new_process(nargs /*argc*/, (userptr_t)usr_argv /*userspace addr of argv*/,
+			  NULL /*userspace addr of environment*/,
+			  stackptr, entrypoint);
+
+	/* enter_new_process does not return. */
+	panic("enter_new_process returned\n");
+	return EINVAL;
+}
