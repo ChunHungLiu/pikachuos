@@ -52,6 +52,7 @@ main(int argc, char *argv[])
 	const char *file;
 	int fd, rv;
 
+	printf("Running\n");
 	if (argc == 0) {
 		warnx("No arguments - running on \"testfile\"");
 		file = "testfile";
@@ -63,27 +64,32 @@ main(int argc, char *argv[])
 		errx(1, "Usage: filetest <filename>");
 	}
 
+	printf("Testing: open (write)\n");
 	fd = open(file, O_WRONLY|O_CREAT|O_TRUNC, 0664);
 	if (fd<0) {
 		err(1, "%s: open for write", file);
 	}
 
 
+	printf("Testing: write from %p\n", writebuf);
 	rv = write(fd, writebuf, 40);
 	if (rv<0) {
 		err(1, "%s: write", file);
 	}
 
+	printf("Testing: close\n");
 	rv = close(fd);
 	if (rv<0) {
 		err(1, "%s: close (1st time)", file);
 	}
 
+	printf("Testing: open (read)\n");
 	fd = open(file, O_RDONLY);
 	if (fd<0) {
 		err(1, "%s: open for read", file);
 	}
 
+	printf("Testing: read\n");
 	rv = read(fd, readbuf, 40);
 	if (rv<0) {
 		err(1, "%s: read", file);
@@ -95,10 +101,12 @@ main(int argc, char *argv[])
 	/* ensure null termination */
 	readbuf[40] = 0;
 
+	printf("Comparing read/write\n");
 	if (strcmp(readbuf, writebuf)) {
 		errx(1, "Buffer data mismatch!");
 	}
 
+	printf("Testing: remove\n");
 	rv = remove(file);
 	if (rv<0) {
 		err(1, "%s: remove", file);

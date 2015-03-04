@@ -65,6 +65,8 @@ off_t sys_lseek_32(int fd, int pos1, int pos2, int whence, int *retval);
 off_t sys_lseek(int fd, off_t pos, int whence, int *retval);
 int sys_close(int filehandle, int *retval);
 int sys_dup2(int oldfd, int newfd, int *retval);
+int sys_chdir(const char *pathname, int *retval);
+int sys___getcwd(char *buf, size_t buflen, int *retval);
 int sys_fork(struct trapframe *tf, pid_t *retval);
 void sys__exit(int exitcode);
 int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval);
