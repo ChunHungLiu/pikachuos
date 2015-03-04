@@ -132,10 +132,11 @@ int sys_getpid(pid_t *retval) {
 	return 0;
 }
 
-int sys_execv(char* progname, char** args) {
+int sys_execv(char* progname, char** args, int *retval) {
 	int result;
 	int *args_len;
 	size_t len;
+	size_t total_len = 0;
 	char *temp;
 	char **kern_args;
 	int nargs = 0;
@@ -144,14 +145,35 @@ int sys_execv(char* progname, char** args) {
 	args_len = kmalloc(sizeof(int) * 1024);
 	temp = kmalloc(sizeof(char) * ARG_MAX);
 
+	if (args == NULL) {
+		*retval = -1;
+        return EFAULT;
+    }
+
+   	result = copyinstr((userptr_t)args, temp, ARG_MAX, &len);
+   	if (result) {
+		*retval = -1;
+   		return result;
+   	}
+
 	// Figure out nargs, and the length for each arg string
 	while(args[nargs] != NULL) {
-		copyinstr((userptr_t)args[nargs], temp, ARG_MAX, &len);
-		args_len[nargs] = len ;
+		result = copyinstr((userptr_t)args[nargs], temp, ARG_MAX, &len);
+		if (result) {
+			*retval = -1;
+			return result;
+		}
+		args_len[nargs] = len;
+		total_len += len;
         nargs += 1;
     }
     kfree(temp);
-
+    
+    if (total_len > ARG_MAX) {
+		*retval = -1;
+    	return E2BIG;
+    }
+    
     kern_args = kmalloc(sizeof(char*) * nargs);
 
 	// Go through args and copy everything over to kern_args using copyinstr
@@ -159,8 +181,8 @@ int sys_execv(char* progname, char** args) {
 		// This is causing issue
 		kern_args[i] = kmalloc(sizeof(char) * args_len[i]);
 		if (kern_args[i] == NULL) {
-			kprintf("Memroy alloc failed on %d. \n", i);
-			KASSERT(NULL);
+			*retval = -1;
+			return ENOMEM;
 		}
         copyinstr((userptr_t)args[i], kern_args[i], ARG_MAX, NULL);
 	}
@@ -171,14 +193,20 @@ int sys_execv(char* progname, char** args) {
 	vaddr_t entrypoint, stackptr;
 
 	result = copyinstr((userptr_t)progname, kern_progname, PATH_MAX, NULL);
+	if (*kern_progname == 0) {
+		*retval = -1;
+		return ENOENT;
+	}
 	if (result) {
 		kfree(kern_progname);
+		*retval = -1;
 		return result;
 	}
 
 	/* Open the file. */
 	result = vfs_open(kern_progname, O_RDONLY, 0, &v);
 	if (result) {
+		*retval = -1;
 		return result;
 	}
 
@@ -193,6 +221,7 @@ int sys_execv(char* progname, char** args) {
 	as = as_create();
 	if (as == NULL) {
 		vfs_close(v);
+		*retval = -1;
 		return ENOMEM;
 	}
 
@@ -208,6 +237,7 @@ int sys_execv(char* progname, char** args) {
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		vfs_close(v);
+		*retval = -1;
 		return result;
 	}
 
@@ -218,6 +248,7 @@ int sys_execv(char* progname, char** args) {
 	result = as_define_stack(as, &stackptr);
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
+		*retval = -1;
 		return result;
 	}
 
@@ -234,7 +265,7 @@ int sys_execv(char* progname, char** args) {
         usr_argv[i] = (userptr_t)stackptr;
         // Copy over string
         copyout(kern_args[i], usr_argv[i],
-        	sizeof(char) * (strlen(kern_args[i]) + 1) );
+        	sizeof(char) * (strlen(kern_args[i]) + 1));
     }
 
     // NULL terminate usr_argv
