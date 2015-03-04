@@ -74,7 +74,7 @@ int sys_read(int filehandle, void *buf, size_t size, int *retval)
 {
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
 	struct file_obj *file;
-	int bytes_read = 0;
+	int err = 0;
 
 	if (filehandle < 0 || filehandle > OPEN_MAX || ft[filehandle] == NULL)
 		return EBADF;
@@ -101,14 +101,16 @@ int sys_read(int filehandle, void *buf, size_t size, int *retval)
 	read_uio.uio_rw = UIO_READ;
 	read_uio.uio_space = proc_getas();
 
-	*retval = VOP_READ(file->file_node, &read_uio);
+	err = VOP_READ(file->file_node, &read_uio);
 
-	bytes_read = size - read_uio.uio_resid;
-	file->pos += bytes_read;
+	// Still update stuff in case we manage to write some of the stuff before
+	// the error
+	*retval = size - read_uio.uio_resid;
+	file->pos += *retval;
 
 	lock_release(file->file_lock);
 
-	return bytes_read;
+	return err;
 }
 
 /**
@@ -124,7 +126,7 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 {
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
 	struct file_obj *file;
-	int bytes_written;
+	int err = 0;
 
 	//lock_acquire(curproc->p_filetable->filetable_lock);
 
@@ -155,13 +157,16 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 	write_uio.uio_rw = UIO_WRITE;
 	write_uio.uio_space = proc_getas();
 
-	*retval = VOP_WRITE(file->file_node, &write_uio);
-	bytes_written = size - write_uio.uio_resid;
-	file->pos += bytes_written;
+	err = VOP_WRITE(file->file_node, &write_uio);
+
+	// Still update stuff in case we manage to write some of the stuff before
+	// the error
+	*retval = size - write_uio.uio_resid;
+	file->pos += *retval;
 
 	lock_release(file->file_lock);
 
-	return bytes_written;
+	return err;
 }
 
 /**
