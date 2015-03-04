@@ -88,15 +88,15 @@ check(void)
 	}
 }
 
-/*
- * Wait for a child process.
- *
- * This assumes dowait is called the same number of times as dofork
- * and passed its results in reverse order. Any forks that fail send
- * us -1 and are ignored. The first 0 we see indicates the fork that
- * generated the current process; that means it's time to exit. Only
- * the parent of all the processes returns from the chain of dowaits.
- */
+
+//  * Wait for a child process.
+//  *
+//  * This assumes dowait is called the same number of times as dofork
+//  * and passed its results in reverse order. Any forks that fail send
+//  * us -1 and are ignored. The first 0 we see indicates the fork that
+//  * generated the current process; that means it's time to exit. Only
+//  * the parent of all the processes returns from the chain of dowaits.
+ 
 static
 void
 dowait(int nowait, int pid)
@@ -112,7 +112,7 @@ dowait(int nowait, int pid)
 		exit(0);
 	}
 
-	if (!nowait) {
+	if (nowait) {
 		if (waitpid(pid, &x, 0)<0) {
 			warn("waitpid");
 		}
@@ -169,6 +169,20 @@ test(int nowait)
 int
 main(int argc, char *argv[])
 {
+	// int pid;
+	// int x;
+	// printf("STRAT\n");
+	// pid = fork();
+	// if (pid == 0) {
+	// 	printf("CHILD\n");
+	// } else {
+	// 	printf("PARENT\n");
+	// 	if (waitpid(pid, &x, 0) == pid){
+	// 		printf("CHILD IS BACK!\n");
+	// 	}
+	// }
+	// return 0;
+
 	static const char expected[] =
 		"|----------------------------|\n";
 	int nowait=0;

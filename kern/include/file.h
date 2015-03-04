@@ -26,4 +26,4 @@ int filetable_add(struct file_obj *file_ptr, int *retval);
 int filetable_remove(int fd);
 int filetable_destroy(void);
 // make a shallow copy for the filetable. refcounts should be increased
-int filetable_copy(struct filetable *dest_fd);
+int filetable_copy(struct filetable *dest_ft);

@@ -21,6 +21,7 @@ static void run_forked_proc(void *tf, unsigned long junk)
 	kern_tf = *(struct trapframe *)tf;
 
 	// TODO: any sync issue with tf?
+	kfree(tf);
 	enter_forked_process(&kern_tf);
 }
 
@@ -30,11 +31,16 @@ int sys_fork(struct trapframe *tf, pid_t *retval) {
 	(void) result;
 	(void) tf;
 	(void) retval;
+	struct trapframe *temp_tf = kmalloc(sizeof(*temp_tf));
+	*temp_tf = *tf;
 
 	struct proc *newproc = proc_create("forked_process");
 
 	// TODO: concurrency issue?
 	as_copy(curproc->p_addrspace, &newproc->p_addrspace);
+
+	newproc->p_filetable = kmalloc(sizeof(struct filetable));
+	newproc->p_filetable->filetable_lock = lock_create("filetable_lock");
 
 	filetable_copy(newproc->p_filetable);
 	// copied from proc.c init p_cwd
@@ -49,34 +55,29 @@ int sys_fork(struct trapframe *tf, pid_t *retval) {
 
 	name = kstrdup(curproc->p_name);
 
-	thread_fork(name, newproc ,run_forked_proc, (void *)tf, 0);
-
 	*retval = newproc->pid;
+
+	thread_fork(name, newproc ,run_forked_proc, (void *)temp_tf, 0);
 
 	return 0;
 }
 
 void sys__exit(int exitcode) {
 	(void) exitcode;
+
 	lock_acquire(proc_table_lock);
 
 	// orphan all children, should be done no matter what
 	for (int i = 0; i < PID_MAX; i++) {
-		// Found a child
+		// Found a children
 		if (proc_table[i] != NULL && proc_table[i]->parent_pid == curproc->pid) {
 			proc_table[i]->parent_pid = INVALID_PID;
-			// weird case, child exited, parent doesn't wait, but exited later
+			// weird case, parent doesn't wait, but exited later
 			if (proc_table[i]->exited) {
 				proc_destroy(proc_table[i]);
 			}
 		}
 	}
-
-	/*
-	 * Detach from our process. You might need to move this action
-	 * around, depending on how your wait/exit works.
-	 */
-	proc_remthread(curthread);
 
 	// set exitcode stuff is probably unnecessary for orphan
 	if (curproc->parent_pid == INVALID_PID) {
@@ -94,6 +95,8 @@ void sys__exit(int exitcode) {
 	}
 
 	lock_release(proc_table_lock);
+	// kfree(curproc);
+	thread_exit();
 }
 
 int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval) {
