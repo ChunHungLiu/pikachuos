@@ -60,6 +60,7 @@ dofork(void)
 	if (pid < 0) {
 		warn("fork");
 	}
+	// printf("VVVVVV\n");
 	return pid;
 }
 
@@ -68,62 +69,68 @@ dofork(void)
  * the pid into the data segment and read it back repeatedly, making
  * sure it's correct every time.
  */
-static
-void
-check(void)
-{
-	int i;
+// static
+// void
+// check(void)
+// {
+// 	int i;
 
-	mypid = getpid();
+// 	mypid = getpid();
 
-	/* Make sure each fork has its own address space. */
-	for (i=0; i<800; i++) {
-		volatile int seenpid;
-		seenpid = mypid;
-		if (seenpid != getpid()) {
-			errx(1, "pid mismatch (%d, should be %d) "
-			     "- your vm is broken!",
-			     seenpid, getpid());
-		}
-	}
-}
+// 	/* Make sure each fork has its own address space. */
+// 	for (i=0; i<800; i++) {
+// 		volatile int seenpid;
+// 		seenpid = mypid;
+// 		if (seenpid != getpid()) {
+// 			errx(1, "pid mismatch (%d, should be %d) "
+// 			     "- your vm is broken!",
+// 			     seenpid, getpid());
+// 		}
+// 	}
+// }
 
-/*
- * Wait for a child process.
- *
- * This assumes dowait is called the same number of times as dofork
- * and passed its results in reverse order. Any forks that fail send
- * us -1 and are ignored. The first 0 we see indicates the fork that
- * generated the current process; that means it's time to exit. Only
- * the parent of all the processes returns from the chain of dowaits.
- */
-static
-void
-dowait(int nowait, int pid)
-{
-	int x;
 
-	if (pid<0) {
-		/* fork in question failed; just return */
-		return;
-	}
-	if (pid==0) {
-		/* in the fork in question we were the child; exit */
-		exit(0);
-	}
+//  * Wait for a child process.
+//  *
+//  * This assumes dowait is called the same number of times as dofork
+//  * and passed its results in reverse order. Any forks that fail send
+//  * us -1 and are ignored. The first 0 we see indicates the fork that
+//  * generated the current process; that means it's time to exit. Only
+//  * the parent of all the processes returns from the chain of dowaits.
+ 
+// static
+// void
+// dowait(int nowait, int pid)
+// {
+// 	int x;
 
-	if (!nowait) {
-		if (waitpid(pid, &x, 0)<0) {
-			warn("waitpid");
-		}
-		else if (WIFSIGNALED(x)) {
-			warnx("pid %d: signal %d", pid, WTERMSIG(x));
-		}
-		else if (WEXITSTATUS(x) != 0) {
-			warnx("pid %d: exit %d", pid, WEXITSTATUS(x));
-		}
-	}
-}
+// 	if (pid<0) {
+// 		/* fork in question failed; just return */
+// 		return;
+// 	}
+// 	if (pid==0) {
+// 		/* in the fork in question we were the child; exit */
+// 		exit(0);
+// 	}
+
+// 	// printf("RRRRRRR\n");
+// 	if (nowait) {
+// 		if (waitpid(pid, &x, 0)<0) {
+// 			// printf("XXXX\n");
+// 			warn("waitpid");
+// 		}
+// 		else if (WIFSIGNALED(x)) {
+// 			// printf("XXXX\n");
+// 			warnx("pid %d: signal %d", pid, WTERMSIG(x));
+// 		}
+// 		else if (WEXITSTATUS(x) != 0) {
+// 			// printf("XXXX\n");
+// 			warnx("pid %d: exit %d", pid, WEXITSTATUS(x));
+// 		}
+// 		// printf("YYYYYY\n");
+// 	}
+// 	// printf("YYYYYYY\n");
+// }
 
 /*
  * Actually run the test.
@@ -132,7 +139,10 @@ static
 void
 test(int nowait)
 {
-	int pid0, pid1, pid2, pid3;
+	// int pid0, pid1, pid2, pid3;
+	int pid0;
+	(void) nowait;
+	(void)pid0;
 
 	/*
 	 * Caution: This generates processes geometrically.
@@ -143,25 +153,26 @@ test(int nowait)
 
 	pid0 = dofork();
 	putchar('0');
-	check();
-	pid1 = dofork();
-	putchar('1');
-	check();
-	pid2 = dofork();
-	putchar('2');
-	check();
-	pid3 = dofork();
-	putchar('3');
-	check();
+	// check();
+	// pid1 = dofork();
+	// putchar('1');
+	// check();
+	// pid2 = dofork();
+	// putchar('2');
+	// check();
+	// pid3 = dofork();
+	// putchar('3');
+	// check();
 
 	/*
 	 * These must be called in reverse order to avoid waiting
 	 * improperly.
 	 */
-	dowait(nowait, pid3);
-	dowait(nowait, pid2);
-	dowait(nowait, pid1);
-	dowait(nowait, pid0);
+	// dowait(nowait, pid3);
+	// dowait(nowait, pid2);
+	// dowait(nowait, pid1);
+	// dowait(nowait, pid0);
+	printf("XXXXXXX");
 
 	putchar('\n');
 }
@@ -169,6 +180,16 @@ test(int nowait)
 int
 main(int argc, char *argv[])
 {
+	int pid;
+	printf("STRAT\n");
+	pid = fork();
+	if (pid == 0) {
+		printf("CHILD\n");
+	} else {
+		printf("PARENT\n");
+	}
+	return 0;
+
 	static const char expected[] =
 		"|----------------------------|\n";
 	int nowait=0;

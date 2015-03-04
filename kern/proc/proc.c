@@ -85,12 +85,6 @@ proc_create(const char *name)
 	/* VFS fields */
 	proc->p_cwd = NULL;
 
-	if (proc_table[KPROC_PID] == NULL) {
-		proc->pid = KPROC_PID;
-	} else {
-		// probably a race condition here?
-		proc->pid = new_pid();		
-	}
 	proc->parent_pid = INVALID_PID;
 
 	proc->exitcode = 0;
@@ -98,19 +92,27 @@ proc_create(const char *name)
 
 	proc->waitpid_cv = cv_create("waitpid_cv");
 
+	// lock_acquire(proc_table_lock);
+	if (proc_table[KPROC_PID] == NULL) {
+		proc->pid = KPROC_PID;
+	} else {
+		// probably a race condition here?
+		proc->pid = new_pid();		
+	}
+	proc_table[proc->pid] = proc;
+	// lock_release(proc_table_lock);
+
 	return proc;
 }
 
 pid_t new_pid() {
-	lock_acquire(proc_table_lock);
+	// KASSERT(lock_do_i_hold(proc_table_lock));
 	for (int pid = 1; pid < PID_MAX; pid++) {
 		if (proc_table[pid] == NULL){
-			lock_release(proc_table_lock);
 			return (pid_t)pid;
 		}
 	}
 	// TODO: OUT OF PID
-	lock_release(proc_table_lock);
 	return -1;
 }
 
@@ -196,21 +198,23 @@ proc_destroy(struct proc *proc)
 		as_destroy(as);
 	}
 
-	threadarray_cleanup(&proc->p_threads);
+	// Causing thread escape
+	// threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
 
-	cv_destroy(proc->waitpid_cv);
+	// Causing TLB miss on load
+	// cv_destroy(proc->waitpid_cv);
 
 	// Caller will need to acquire the lock
 	KASSERT(lock_do_i_hold(proc_table_lock));
-	proc_table[proc->pid] = NULL;
+	// proc_table[proc->pid] = NULL;
 
-	kfree(proc->p_name);
-	kfree(proc);
+	// kfree(proc->p_name);
+	// kfree(proc);
 }
 
 /*
- * Create the process structure for the kernel.
+ * Create the proce?ss structure for the kernel.
  */
 void
 proc_bootstrap(void)
@@ -279,6 +283,7 @@ proc_addthread(struct proc *proc, struct thread *t)
 {
 	int result;
 	int spl;
+	struct thread *test;
 
 	KASSERT(t->t_proc == NULL);
 
@@ -288,6 +293,8 @@ proc_addthread(struct proc *proc, struct thread *t)
 	if (result) {
 		return result;
 	}
+	test = threadarray_get(&proc->p_threads, 0);
+	KASSERT(test != 0);
 	spl = splhigh();
 	t->t_proc = proc;
 	splx(spl);
@@ -309,6 +316,7 @@ proc_remthread(struct thread *t)
 	struct proc *proc;
 	unsigned i, num;
 	int spl;
+	struct thread *test;
 
 	proc = t->t_proc;
 	KASSERT(proc != NULL);
@@ -316,8 +324,13 @@ proc_remthread(struct thread *t)
 	spinlock_acquire(&proc->p_lock);
 	/* ugh: find the thread in the array */
 	num = threadarray_num(&proc->p_threads);
+	(void)num;
+	(void)i;
+	test = threadarray_get(&proc->p_threads, 0);
+	KASSERT(test != NULL);
 	for (i=0; i<num; i++) {
-		if (threadarray_get(&proc->p_threads, i) == t) {
+		test = threadarray_get(&proc->p_threads, i);
+		if (test == t) {
 			threadarray_remove(&proc->p_threads, i);
 			spinlock_release(&proc->p_lock);
 			spl = splhigh();

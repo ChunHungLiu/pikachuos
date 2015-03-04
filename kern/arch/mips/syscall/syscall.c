@@ -196,7 +196,7 @@ syscall(struct trapframe *tf)
 void
 enter_forked_process(struct trapframe *tf)
 {
-	tf->tf_a0 = 0;
+	tf->tf_a3 = 0;
 	tf->tf_v0 = 0;
 
 	// jumps over the fork instruction
