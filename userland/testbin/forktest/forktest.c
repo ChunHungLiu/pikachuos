@@ -184,15 +184,10 @@ main(int argc, char *argv[])
 	printf("STRAT\n");
 	pid = fork();
 	if (pid == 0) {
-		// printf("CHILD\n");
-		while(1){
-		}
+		printf("CHILD\n");
 	} else {
 		printf("PARENT\n");
 	}
-	// fork();
-	// printf("YYYYYY\n");
-	// _exit(1);
 	return 0;
 
 	static const char expected[] =

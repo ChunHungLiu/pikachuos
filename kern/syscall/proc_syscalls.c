@@ -39,7 +39,7 @@ int sys_fork(struct trapframe *tf, pid_t *retval) {
 	// TODO: concurrency issue?
 	as_copy(curproc->p_addrspace, &newproc->p_addrspace);
 
-	newproc->p_filetable = kmalloc(sizeof(newproc->p_filetable));
+	newproc->p_filetable = kmalloc(sizeof(struct filetable));
 	newproc->p_filetable->filetable_lock = lock_create("filetable_lock");
 
 	filetable_copy(newproc->p_filetable);

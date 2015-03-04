@@ -99,23 +99,17 @@ int filetable_add(struct file_obj *file_ptr, int *retval) {
 // TODO: should we model the interface on as_copy?
 int filetable_copy(struct filetable *dest_ft) {
 	struct filetable *curft = curproc->p_filetable;
-	(void) curft;
-	(void) dest_ft;
-	// struct filetable *new_ft; 
-	// dest_ft = kmalloc(sizeof(struct filetable));
-	// // Not sure if this a good idea or not
-	// dest_ft->filetable_lock = lock_create("filetable_lock");
-
-	// for (int fd = 0; fd < OPEN_MAX; fd ++) {
-	// 	if (curft->filetable_files[fd] != NULL){
-	// 		lock_acquire(curft->filetable_files[fd]->file_lock);
-	// 		curft->filetable_files[fd]->file_refcount++;
-	// 		lock_release(curft->filetable_files[fd]->file_lock);
-	// 		dest_ft->filetable_files[fd] = curft->filetable_files[fd];
-	// 	} else {
-	// 		dest_ft->filetable_files[fd] = NULL;
-	// 	}
-	// }
+	
+	for (int fd = 0; fd < OPEN_MAX; fd ++) {
+		if (curft->filetable_files[fd] != NULL){
+			lock_acquire(curft->filetable_files[fd]->file_lock);
+			curft->filetable_files[fd]->file_refcount++;
+			lock_release(curft->filetable_files[fd]->file_lock);
+			dest_ft->filetable_files[fd] = curft->filetable_files[fd];
+		} else {
+			dest_ft->filetable_files[fd] = NULL;
+		}
+	}
 	return 0;
 }
 
