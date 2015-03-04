@@ -92,6 +92,7 @@ proc_create(const char *name)
 
 	proc->waitpid_cv = cv_create("waitpid_cv");
 
+	// TODO: This is causing deadlock on bootup
 	// lock_acquire(proc_table_lock);
 	if (proc_table[KPROC_PID] == NULL) {
 		proc->pid = KPROC_PID;
@@ -203,13 +204,13 @@ proc_destroy(struct proc *proc)
 	spinlock_cleanup(&proc->p_lock);
 
 	// Causing TLB miss on load
-	// cv_destroy(proc->waitpid_cv);
+	cv_destroy(proc->waitpid_cv);
 
 	// Caller will need to acquire the lock
 	KASSERT(lock_do_i_hold(proc_table_lock));
-	// proc_table[proc->pid] = NULL;
+	proc_table[proc->pid] = NULL;
 
-	// kfree(proc->p_name);
+	kfree(proc->p_name);
 	// kfree(proc);
 }
 
