@@ -303,3 +303,79 @@ int sys_close(int filehandle, int *retval) {
 		*retval = 0;
 	return 0;
 }
+
+/**
+ * Sets the process' current working directory to the path specified by
+ * pathname, if it exists
+ * @param  pathname path to change to 
+ * @param  retval   pointer to the int to store the return value
+ * @return          0 if successful, otherwise the error code
+ */
+int sys_chdir(const char *pathname, int *retval) {
+	unsigned int path_len = 0;
+	unsigned int ret = 0;
+	char* kpath;
+	int err = 0;
+
+	// Copy the pathname into the kernel
+	path_len = strlen(pathname);
+	kpath = kmalloc(path_len + 1);
+	if (kpath == NULL) {
+		*retval = -1;
+		return ENOMEM;
+	}
+	copyinstr((const_userptr_t)pathname, kpath, path_len, &ret);
+	KASSERT(ret == path_len);
+	if (ret != path_len) {
+		kfree(kpath);
+		*retval = -1;
+		return ENAMETOOLONG;
+	}
+
+	// Do the chdir
+	err = vfs_chdir(kpath);
+	kfree(kpath);
+	if (err) {
+		*retval = -1;
+		return err;
+	}
+
+	*retval = 0;
+	return 0;
+}
+
+/**
+ * Stores up to 'buflen-1' characters of the current working directory into
+ * 'buf', returning the number of bytes stored
+ * @param  buf    buffer to store the current working directory
+ * @param  buflen max length of 'buf'
+ * @param  retval pointer to store the result
+ * @return        0 if successful, otherwise the error
+ */
+int sys___getcwd(char *buf, size_t buflen, int *retval) {
+	int err = 0;
+
+	// Create uio to copy path from kernel to 'buf'
+	struct uio cwd_uio;
+	struct iovec iov;
+
+	iov.iov_ubase = (void *) buf;
+	iov.iov_len = buflen;
+	cwd_uio.uio_iov = &iov;
+	cwd_uio.uio_iovcnt = 1;
+	cwd_uio.uio_offset = 0;
+	cwd_uio.uio_resid = buflen;
+	cwd_uio.uio_segflg = UIO_USERSPACE;	// User process data
+	cwd_uio.uio_rw = UIO_READ;			// From kernel to uio_seg
+	cwd_uio.uio_space = proc_getas();
+
+	err = vfs_getcwd(&cwd_uio);
+	if (err) {
+		*retval = -1;
+		return err;
+	}
+
+	// uio_offset will hold the number of bytes read
+	*retval = cwd_uio.uio_offset;
+	return 0;
+}

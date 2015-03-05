@@ -115,11 +115,11 @@ syscall(struct trapframe *tf)
 		break;
 
 	    case SYS_read:
-	    err = sys_read(tf->tf_a0, (userptr_t)tf->tf_a1, tf->tf_a2, &retval);
+	    err = sys_read(tf->tf_a0, (void *)tf->tf_a1, tf->tf_a2, &retval);
 	    break;
 
 	    case SYS_write:
-	    err = sys_write(tf->tf_a0, (userptr_t)tf->tf_a1, tf->tf_a2, &retval);
+	    err = sys_write(tf->tf_a0, (void *)tf->tf_a1, tf->tf_a2, &retval);
 	    break;
 
 	    case SYS_lseek:	// fd         pos1       pos2       whence
@@ -132,6 +132,14 @@ syscall(struct trapframe *tf)
 
 	    case SYS_close:
 	    err = sys_close(tf->tf_a0, &retval);
+	    break;
+
+	    case SYS_chdir:
+	    err = sys_chdir((const char*)tf->tf_a0, &retval);
+	    break;
+
+	    case SYS___getcwd:
+	    err = sys___getcwd((char *)tf->tf_a0, tf->tf_a1, &retval);
 	    break;
 
 	    case SYS_fork:
