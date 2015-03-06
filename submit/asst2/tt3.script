@@ -1,0 +1,47 @@
+Script started on Fri Mar  6 05:47:08 2015
+jharvard@appliance:~/cs161/root$ sys161 kernel
+sys161: System/161 release 2.0.2, compiled Jan 28 2015 17:26:37
+
+OS/161 base system version 2.0
+Copyright (c) 2000, 2001-2005, 2008-2011, 2013, 2014
+   President and Fellows of Harvard College.  All rights reserved.
+
+Put-your-group-name-here's system version 0 (ASST2 #5)
+
+3660k physical memory available
+Device probe...
+lamebus0 (system main bus)
+emu0 at lamebus0
+ltrace0 at lamebus0
+ltimer0 at lamebus0
+beep0 at ltimer0
+rtclock0 at ltimer0
+lrandom0 at lamebus0
+random0 at lrandom0
+lhd0 at lamebus0
+lhd1 at lamebus0
+lser0 at lamebus0
+con0 at lser0
+
+cpu0: MIPS/161 (System/161 2.x) features 0x0
+cpu1: MIPS/161 (System/161 2.x) features 0x0
+buffers: max count 2048; max size 1024k
+OS/161 kernel [? for menu]: tt3
+Starting thread test 3 (5 [sleepalots], 2 {computes}, 1 waker)
+{0: 168}[1][3][4][2][0]{1: 20}{0: 191}{1: 155}{0: 200}[1][0]{1: 68}{0: 18}[4]{1: 48}{0: 242}[1][3][2]{1: 7}{0: 78}[4]{1: 97}{0: 75}[3][0]{1: 125}{0: 122}{1: 144}{0: 193}[2]{1: 86}[1][1][1]{0: 246}[2][2][1][2][1][2][1][2][2][1][2][1][2][1][2][1][2][1][2][2][0][0][1][2][0][1][2][0]{1: 81}[4][3][1][2][0][4][3][1][2][0][4][3][1][2][0][4][3][1][0][4][3][0][4][3][0][4][0][3][4][0][3][4][0][3][4][0][3][4][0][3][4][0][3][4][0][3][4][4][3][4][3][4][3][3]
+Thread test 3 done
+Operation took 8.211850120 seconds
+OS/161 kernel [? for menu]: p /sbin/poweroff
+Operation took 0.000411200 seconds
+OS/161 kernel [? for menu]: Shutting down.
+The system is halted.
+cpu1: offline.
+sys161: 481343392 cycles (246726535 run, 234616857 global-idle)
+sys161:   cpu0: 211340649 kern, 20 user, 125450 idle; 50921 ll, 50921/0 sc, 185541 sync
+sys161:   cpu1: 175226406 kern, 0 user, 36239713 idle; 3426 ll, 3426/0 sc, 57276 sync
+sys161: 4096 irqs 5 exns 0r/0w disk 21r/1375w console 8r/0w/3m emufs 0r/0w net
+sys161: Elapsed real time: 19.016191 seconds (25.3123 mhz)
+sys161: Elapsed virtual time: 19.258025838 seconds (25 mhz)
+jharvard@appliance:~/cs161/root$ exit
+
+Script done on Fri Mar  6 05:47:34 2015

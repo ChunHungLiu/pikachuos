@@ -137,6 +137,7 @@ common_prog(int nargs, char **args)
 		proc_destroy(proc);
 		return result;
 	}
+	sys_waitpid(proc->pid, (userptr_t) result, 0, &result);
 
 	/*
 	 * The new process will be destroyed when the program exits...
