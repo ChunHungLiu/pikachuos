@@ -144,9 +144,6 @@ test(int nowait)
 	pid0 = dofork();
 	putchar('0');
 	check();
-	while (true) {
-		printf("%d", pid0);
-	}
 	pid1 = dofork();
 	putchar('1');
 	check();

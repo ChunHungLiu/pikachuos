@@ -126,7 +126,7 @@ syscall(struct trapframe *tf)
 
 	    case SYS_lseek:
 	    ret64 = true;	// fd         pos1       pos2       whence
-	    err = sys_lseek_32(tf->tf_a0, tf->tf_a2, tf->tf_a3, tf->tf_a1, (uint32_t*) &retval, (uint32_t*) &retval2);
+	    err = sys_lseek_32(tf->tf_a0, tf->tf_a2, tf->tf_a3, *(int *)(tf->tf_sp+16), (uint32_t*) &retval, (uint32_t*) &retval2);
 	    break;
 
 	    case SYS_dup2:
