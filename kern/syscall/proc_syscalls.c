@@ -1,6 +1,7 @@
 #include <types.h>
 #include <kern/errno.h>
 #include <kern/fcntl.h>
+#include <kern/wait.h>
 #include <lib.h>
 #include <proc.h>
 #include <current.h>
@@ -89,7 +90,7 @@ void sys__exit(int exitcode) {
 
 		// TODO: This is probably not a good design
 		curproc->exited = true;
-		curproc->exitcode = exitcode;
+		curproc->exitcode = _MKWAIT_EXIT(exitcode);
 		// Wake up parent
 		cv_signal(curproc->waitpid_cv, proc_table_lock);
 	}
@@ -106,10 +107,33 @@ int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval) {
 	(void) retval;
 
 	// TODO: a lot of sanity checks for this one.
-	
+	if (pid < 1 || pid > PID_MAX){
+		return ESRCH;
+	}
+	if (pid == curproc->pid) {
+		return ECHILD;
+	}
+	if (flags != 0 && flags != WNOHANG) {
+		return EINVAL;
+	}
+
+	if (returncode == NULL) {
+		return EINVAL;
+	}
+
 	// TODO: what's the _MKWAIT_EXIT stuff?
 	lock_acquire(proc_table_lock);
 	struct proc *child = proc_table[pid];
+
+	if (child == NULL) {
+		lock_release(proc_table_lock);
+		return ESRCH;
+	}
+
+	if (child->parent_pid != curproc->pid) {
+		lock_release(proc_table_lock);
+		return ECHILD;
+	}
 
 	if (!child->exited) {
 		// We always wait on the child's cv
@@ -132,10 +156,11 @@ int sys_getpid(pid_t *retval) {
 	return 0;
 }
 
-int sys_execv(char* progname, char** args) {
+int sys_execv(char* progname, char** args, int *retval) {
 	int result;
 	int *args_len;
 	size_t len;
+	size_t total_len = 0;
 	char *temp;
 	char **kern_args;
 	int nargs = 0;
@@ -144,14 +169,40 @@ int sys_execv(char* progname, char** args) {
 	args_len = kmalloc(sizeof(int) * 1024);
 	temp = kmalloc(sizeof(char) * ARG_MAX);
 
+	if (kern_progname == NULL || args_len == NULL || temp == NULL){
+		*retval = -1;
+		return ENOMEM;
+	}
+
+	if (args == NULL || progname == NULL) {
+		*retval = -1;
+        return EFAULT;
+    }
+
+   	result = copyinstr((userptr_t)args, temp, ARG_MAX, &len);
+   	if (result) {
+		*retval = -1;
+   		return result;
+   	}
+
 	// Figure out nargs, and the length for each arg string
 	while(args[nargs] != NULL) {
-		copyinstr((userptr_t)args[nargs], temp, ARG_MAX, &len);
-		args_len[nargs] = len ;
+		result = copyinstr((userptr_t)args[nargs], temp, ARG_MAX, &len);
+		if (result) {
+			*retval = -1;
+			return result;
+		}
+		args_len[nargs] = len;
+		total_len += len;
         nargs += 1;
     }
     kfree(temp);
-
+    
+    if (total_len > ARG_MAX) {
+		*retval = -1;
+    	return E2BIG;
+    }
+    
     kern_args = kmalloc(sizeof(char*) * nargs);
 
 	// Go through args and copy everything over to kern_args using copyinstr
@@ -159,8 +210,8 @@ int sys_execv(char* progname, char** args) {
 		// This is causing issue
 		kern_args[i] = kmalloc(sizeof(char) * args_len[i]);
 		if (kern_args[i] == NULL) {
-			kprintf("Memroy alloc failed on %d. \n", i);
-			KASSERT(NULL);
+			*retval = -1;
+			return ENOMEM;
 		}
         copyinstr((userptr_t)args[i], kern_args[i], ARG_MAX, NULL);
 	}
@@ -171,18 +222,24 @@ int sys_execv(char* progname, char** args) {
 	vaddr_t entrypoint, stackptr;
 
 	result = copyinstr((userptr_t)progname, kern_progname, PATH_MAX, NULL);
+	if (*kern_progname == 0) {
+		*retval = -1;
+		return EISDIR;
+	}
 	if (result) {
 		kfree(kern_progname);
+		*retval = -1;
 		return result;
 	}
 
 	/* Open the file. */
 	result = vfs_open(kern_progname, O_RDONLY, 0, &v);
 	if (result) {
+		*retval = -1;
 		return result;
 	}
 
-	// Blow up the current addrspace
+	// Blow up the current addrspace. TODO, this may be problematic
 	as_destroy(curproc->p_addrspace);
     curproc->p_addrspace = NULL;
 
@@ -193,6 +250,7 @@ int sys_execv(char* progname, char** args) {
 	as = as_create();
 	if (as == NULL) {
 		vfs_close(v);
+		*retval = -1;
 		return ENOMEM;
 	}
 
@@ -208,6 +266,7 @@ int sys_execv(char* progname, char** args) {
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		vfs_close(v);
+		*retval = -1;
 		return result;
 	}
 
@@ -218,6 +277,7 @@ int sys_execv(char* progname, char** args) {
 	result = as_define_stack(as, &stackptr);
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
+		*retval = -1;
 		return result;
 	}
 
@@ -234,7 +294,7 @@ int sys_execv(char* progname, char** args) {
         usr_argv[i] = (userptr_t)stackptr;
         // Copy over string
         copyout(kern_args[i], usr_argv[i],
-        	sizeof(char) * (strlen(kern_args[i]) + 1) );
+        	sizeof(char) * (strlen(kern_args[i]) + 1));
     }
 
     // NULL terminate usr_argv

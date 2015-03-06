@@ -30,11 +30,21 @@ int sys_open(const char* user_filename, int flags, int mode, int *retval) {
 	char* filename;
 	int err = 0;
 	int fd;
+	int result;
+	char *test = kmalloc(PATH_MAX);
 
 	// TODO: Error checking
 
 	// Copy file name - vfs_* may change name
 	// TODO: Should this use copyinstr? 
+	if (user_filename == NULL) {
+		return EFAULT;
+	}
+	result = copyin((userptr_t)user_filename, test, PATH_MAX);
+	if (result) {
+		*retval = 0;
+		return result;
+	}
 	int len = strlen(user_filename);
 	filename = kmalloc(len + 1);
 	if (!filename)
