@@ -1009,7 +1009,11 @@ thread_consider_migration(void)
 
 
 		while (cpu_weight < one_share && to_send > 0) {
+			if (victims.tl_count == 0)
+				break;
 			t = threadlist_remhead(&victims);
+			if (t == NULL)
+				continue;	
 			/*
 			 * Ordinarily, curthread will not appear on
 			 * the run queue. However, it can under the
