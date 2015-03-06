@@ -149,6 +149,8 @@ thread_create(const char *name)
 	thread->t_context = NULL;
 	thread->t_cpu = NULL;
 	thread->t_proc = NULL;
+	thread->priority = NUM_RUN_QUEUES - 1;
+	thread->time_left = 1 << (NUM_RUN_QUEUES - 1);
 
 	/* Interrupt state fields */
 	thread->t_in_interrupt = false;
@@ -192,7 +194,12 @@ cpu_create(unsigned hardware_number)
 	c->c_spinlocks = 0;
 
 	c->c_isidle = false;
-	threadlist_init(&c->c_runqueue);
+
+	// Init runqueues at every level
+	c->cur_queue = 0;
+	for (int i = 0; i < NUM_RUN_QUEUES; i++) {
+		threadlist_init(&c->c_runqueues[i]);
+	}
 	spinlock_init(&c->c_runqueue_lock);
 
 	c->c_ipi_pending = 0;
@@ -316,9 +323,11 @@ thread_panic(void)
 	 * to.  Instead, blat the list structure by hand, and take the
 	 * risk that it might not be quite atomic.
 	 */
-	curcpu->c_runqueue.tl_count = 0;
-	curcpu->c_runqueue.tl_head.tln_next = &curcpu->c_runqueue.tl_tail;
-	curcpu->c_runqueue.tl_tail.tln_prev = &curcpu->c_runqueue.tl_head;
+	for (int i = 0; i < NUM_RUN_QUEUES; i++) {
+		curcpu->c_runqueues[i].tl_count = 0;
+		curcpu->c_runqueues[i].tl_head.tln_next = &curcpu->c_runqueues[i].tl_tail;
+		curcpu->c_runqueues[i].tl_tail.tln_prev = &curcpu->c_runqueues[i].tl_head;
+	}
 
 	/*
 	 * Ideally, we want to make sure sleeping threads don't wake
@@ -470,9 +479,11 @@ thread_make_runnable(struct thread *target, bool already_have_lock)
 		spinlock_acquire(&targetcpu->c_runqueue_lock);
 	}
 
-	/* Target thread is now ready to run; put it on the run queue. */
+	// TODO: Check if other CPUs are idle
+
+	/* Target thread is now ready to run; put it on the correct run queue. */
 	target->t_state = S_READY;
-	threadlist_addtail(&targetcpu->c_runqueue, target);
+	threadlist_addtail(&targetcpu->c_runqueues[target->priority], target);
 
 	if (targetcpu->c_isidle) {
 		/*
@@ -593,21 +604,33 @@ thread_switch(threadstate_t newstate, struct wchan *wc, struct spinlock *lk)
 	/* Lock the run queue. */
 	spinlock_acquire(&curcpu->c_runqueue_lock);
 
-	/* Micro-optimization: if nothing to do, just return */
-	if (newstate == S_READY && threadlist_isempty(&curcpu->c_runqueue)) {
-		spinlock_release(&curcpu->c_runqueue_lock);
-		splx(spl);
-		return;
-	}
+	/* Do not do this micro-optimization as run queues at other priority
+	 * levels may have something to run. Don't bother checking through
+	 * all of those here
+	 */
+	/* X Micro-optimization: if nothing to do, just return */
+	// if (newstate == S_READY && 
+	// 	threadlist_isempty(&curcpu->c_runqueues[0])) {
+	// 	spinlock_release(&curcpu->c_runqueue_lock);
+	// 	splx(spl);
+	// 	return;
+	// }
 
 	/* Put the thread in the right place. */
 	switch (newstate) {
-	    case S_RUN:
+	case S_RUN:
 		panic("Illegal S_RUN in thread_switch\n");
-	    case S_READY:
+	case S_READY:
+		// Add this thread to a lower priority run queue. 
+		cur->priority--;
+		if (cur->priority < 0) {
+			cur->priority = 0;
+		}
+		cur->time_left = 1 << cur->priority;
+		// thread_make_runnable handles adding to the queue
 		thread_make_runnable(cur, true /*have lock*/);
 		break;
-	    case S_SLEEP:
+	case S_SLEEP:
 		cur->t_wchan_name = wc->wc_name;
 		/*
 		 * Add the thread to the list in the wait channel, and
@@ -617,10 +640,16 @@ thread_switch(threadstate_t newstate, struct wchan *wc, struct spinlock *lk)
 		 * caller of wchan_sleep locked it until the thread is
 		 * on the list.
 		 */
+		cur->priority++;
+		cur->priority *= 2;
+		if (cur->priority >= NUM_RUN_QUEUES) {
+			cur->priority = NUM_RUN_QUEUES - 1;
+		}
+		cur->time_left = 1 << cur->priority;
 		threadlist_addtail(&wc->wc_threads, cur);
 		spinlock_release(lk);
 		break;
-	    case S_ZOMBIE:
+	case S_ZOMBIE:
 		cur->t_wchan_name = "ZOMBIE";
 		threadlist_addtail(&curcpu->c_zombies, cur);
 		break;
@@ -647,7 +676,12 @@ thread_switch(threadstate_t newstate, struct wchan *wc, struct spinlock *lk)
 	/* The current cpu is now idle. */
 	curcpu->c_isidle = true;
 	do {
-		next = threadlist_remhead(&curcpu->c_runqueue);
+		// Iterate round-robin over the different level queues
+		curcpu->cur_queue++;
+		if (curcpu->cur_queue >= NUM_RUN_QUEUES) {
+			curcpu->cur_queue = 0;
+		}
+		next = threadlist_remhead(&curcpu->c_runqueues[curcpu->cur_queue]);
 		if (next == NULL) {
 			spinlock_release(&curcpu->c_runqueue_lock);
 			cpu_idle();
@@ -864,38 +898,66 @@ schedule(void)
  * System/161 does not (yet) model such cache effects, we'll be very
  * aggressive.
  */
+
+ /*
+  * Refactored:
+  *
+  * Uses thread weights since higher priority threads take up more
+  * time. 'count' would be semantically incorrect.
+  */
 void
 thread_consider_migration(void)
 {
-	unsigned my_count, total_count, one_share, to_send;
-	unsigned i, numcpus;
+	unsigned my_weight, total_weight, one_share, to_send, sent;
+	unsigned i, j, numcpus;
+	unsigned cpu_weight;
 	struct cpu *c;
 	struct threadlist victims;
 	struct thread *t;
 
-	my_count = total_count = 0;
+	my_weight = total_weight = 0;
 	numcpus = cpuarray_num(&allcpus);
 	for (i=0; i<numcpus; i++) {
+		cpu_weight = 0;
 		c = cpuarray_get(&allcpus, i);
 		spinlock_acquire(&c->c_runqueue_lock);
-		total_count += c->c_runqueue.tl_count;
+		for (j = 0; j < NUM_RUN_QUEUES; j++) {
+			cpu_weight += c->c_runqueues[j].tl_count * (1 << j);
+		}
+		total_weight += cpu_weight;
 		if (c == curcpu->c_self) {
-			my_count = c->c_runqueue.tl_count;
+			my_weight = cpu_weight;
 		}
 		spinlock_release(&c->c_runqueue_lock);
 	}
 
-	one_share = DIVROUNDUP(total_count, numcpus);
-	if (my_count < one_share) {
+	one_share = DIVROUNDUP(total_weight, numcpus);
+	if (my_weight < one_share) {
 		return;
 	}
 
-	to_send = my_count - one_share;
+	to_send = my_weight - one_share;
 	threadlist_init(&victims);
 	spinlock_acquire(&curcpu->c_runqueue_lock);
-	for (i=0; i<to_send; i++) {
-		t = threadlist_remtail(&curcpu->c_runqueue);
-		threadlist_addhead(&victims, t);
+	sent = 0;
+	i = NUM_RUN_QUEUES - 1;
+	// Greedily pull from the highest priority queue until we're close
+	while (true) {	// Breakout condition is complicated
+		t = threadlist_remtail(&curcpu->c_runqueues[i]);
+		if (to_send < sent + (1 << t->priority)) {
+			// We've overshot, so add that thread back to the list
+			threadlist_addtail(&curcpu->c_runqueues[i], t);
+			// If we're at the loweest level queue, we can't get more precise
+			//  so we're done
+			if (i == 0) {
+				break;
+			}
+			// Go to the lower level queue
+			i--;
+		} else {
+			sent += (1 << t->priority);
+			threadlist_addhead(&victims, t);
+		}
 	}
 	spinlock_release(&curcpu->c_runqueue_lock);
 
@@ -905,7 +967,15 @@ thread_consider_migration(void)
 			continue;
 		}
 		spinlock_acquire(&c->c_runqueue_lock);
-		while (c->c_runqueue.tl_count < one_share && to_send > 0) {
+
+		cpu_weight = 0;
+		for (j = 0; j < NUM_RUN_QUEUES; j++) {
+			cpu_weight += c->c_runqueues[i].tl_count * (1 << j);
+		}
+
+
+
+		while (cpu_weight < one_share && to_send > 0) {
 			t = threadlist_remhead(&victims);
 			/*
 			 * Ordinarily, curthread will not appear on
@@ -931,16 +1001,16 @@ thread_consider_migration(void)
 			 */
 			if (t == curthread) {
 				threadlist_addtail(&victims, t);
-				to_send--;
+				to_send -= 1 << t->priority;
 				continue;
 			}
 
 			t->t_cpu = c;
-			threadlist_addtail(&c->c_runqueue, t);
+			threadlist_addtail(&c->c_runqueues[t->priority], t);
 			DEBUG(DB_THREADS,
 			      "Migrated thread %s: cpu %u -> %u",
 			      t->t_name, curcpu->c_number, c->c_number);
-			to_send--;
+			to_send -= 1 << t->priority;
 			if (c->c_isidle) {
 				/*
 				 * Other processor is idle; send
@@ -953,14 +1023,14 @@ thread_consider_migration(void)
 	}
 
 	/*
-	 * Because the code above isn't atomic, the thread counts may have
+	 * Because the code above isn't atomic, the thread weights may have
 	 * changed while we were working and we may end up with leftovers.
 	 * Don't panic; just put them back on our own run queue.
 	 */
 	if (!threadlist_isempty(&victims)) {
 		spinlock_acquire(&curcpu->c_runqueue_lock);
 		while ((t = threadlist_remhead(&victims)) != NULL) {
-			threadlist_addtail(&curcpu->c_runqueue, t);
+			threadlist_addtail(&curcpu->c_runqueues[t->priority], t);
 		}
 		spinlock_release(&curcpu->c_runqueue_lock);
 	}

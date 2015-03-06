@@ -35,6 +35,7 @@
 #include <threadlist.h>
 #include <machine/vm.h>  /* for TLBSHOOTDOWN_MAX */
 
+#define NUM_RUN_QUEUES 5
 
 /*
  * Per-cpu structure
@@ -67,7 +68,8 @@ struct cpu {
 	 * Protected by the runqueue lock.
 	 */
 	bool c_isidle;			/* True if this cpu is idle */
-	struct threadlist c_runqueue;	/* Run queue for this cpu */
+	struct threadlist c_runqueues[NUM_RUN_QUEUES];	/* Run queues at various priorities */
+	unsigned cur_queue;	/* keeps track of which queue it is currently running from */
 	struct spinlock c_runqueue_lock;
 
 	/*
