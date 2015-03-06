@@ -348,21 +348,28 @@ int sys_close(int filehandle, int *retval) {
  * @return          0 if successful, otherwise the error code
  */
 int sys_chdir(const char *pathname, int *retval) {
-	unsigned int path_len = 0;
+	if (pathname == NULL || pathname >= (const char *) USERSPACETOP) {
+		*retval = -1;
+		return EFAULT;
+	}
+
 	unsigned int ret = 0;
 	char* kpath;
 	int err = 0;
 
 	// Copy the pathname into the kernel
-	path_len = strlen(pathname);
-	kpath = kmalloc(path_len + 1);
+	kpath = kmalloc(PATH_MAX);
 	if (kpath == NULL) {
 		*retval = -1;
 		return ENOMEM;
 	}
-	copyinstr((const_userptr_t)pathname, kpath, path_len, &ret);
-	KASSERT(ret == path_len);
-	if (ret != path_len) {
+	err = copyinstr((const_userptr_t)pathname, kpath, PATH_MAX, &ret);
+	if (err) {
+		kfree(kpath);
+		*retval = -1;
+		return err;
+	}
+	if (ret == PATH_MAX && kpath[ret-1] != 0) {
 		kfree(kpath);
 		*retval = -1;
 		return ENAMETOOLONG;
