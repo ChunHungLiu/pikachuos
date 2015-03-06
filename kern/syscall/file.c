@@ -40,6 +40,36 @@ struct file_obj* file_obj_create(struct vnode *vn, int flags) {
 	return file;	
 }
 
+int console_open(int flags, int *retval) {
+	struct vnode *vn;
+	struct file_obj *file;
+	char* filename;
+	int err = 0;
+	int fd;
+	filename = kmalloc(5);
+	if (!filename)
+		return ENOMEM;
+	strcpy(filename, "con:");
+
+	// Open file
+	err = vfs_open(filename, flags, 0, &vn);
+	kfree(filename);
+	if (err)
+		return err;
+
+	// Create file_obj
+	file = file_obj_create(vn, flags);
+	if (!file)
+		return ENOMEM;
+
+	// Add to the proc's filetable
+	err = filetable_add(file, &fd);
+	if (err)
+		return err;
+	*retval = fd;
+	return 0;
+}
+
 // init con: for all stds
 int filetable_init() {
 	int err = 0;
@@ -52,12 +82,11 @@ int filetable_init() {
 	}
 	curproc->p_filetable->filetable_lock = lock_create("filetable_lock");
 	// open and init stdin stdout and stderr
-	const char *console = "con:";
 	int stdin, stdout, stderr;
 	// We should do something with error values
-	err = sys_open(console, O_RDONLY, 0, &stdin);
-	err = sys_open(console, O_WRONLY, 0, &stdout);
-	err = sys_open(console, O_WRONLY, 0, &stderr);
+	err = console_open(O_RDONLY, &stdin);
+	err = console_open(O_WRONLY, &stdout);
+	err = console_open(O_WRONLY, &stderr);
 	// Sanity check for stdin/out/err fd. TODO: More checks?
 	// There shouldn't be any other open file descriptors when this is called
 	KASSERT(stdin == 0);

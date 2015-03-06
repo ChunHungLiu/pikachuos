@@ -12,6 +12,7 @@ struct file_obj{
 };
 
 struct file_obj* file_obj_create(struct vnode *vn, int flags);
+int console_open(int flags, int *retval);
 
 struct filetable
 {
