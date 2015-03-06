@@ -18,42 +18,46 @@
 
 /**
  * Opens the file/device/kernel object named by the pathname 'filename'. 'flags' specifies how to open the file.
- * @param  user_filename path to the file to be opened
- * @param  flags         flags for how to open the file
- * @param  mode          currently unused
- * @param  retval        pointer to store the file descriptor for the new file
- * @return               0 if successful, otherwise the error
+ * @param  filename path to the file to be opened
+ * @param  flags    flags for how to open the file
+ * @param  mode     currently unused
+ * @param  retval   pointer to store the file descriptor for the new file
+ * @return          0 if successful, otherwise the error
  */
-int sys_open(const char* user_filename, int flags, int mode, int *retval) {
-	struct vnode *vn;
-	struct file_obj *file;
-	char* filename;
-	int err = 0;
-	int fd;
-	int result;
-	char *test = kmalloc(PATH_MAX);
-
-	// TODO: Error checking
-
-	// Copy file name - vfs_* may change name
-	// TODO: Should this use copyinstr? 
-	if (user_filename == NULL) {
+int sys_open(const char* filename, int flags, int mode, int *retval) {
+	if (filename == NULL) {
+		*retval = -1;
 		return EFAULT;
 	}
-	result = copyin((userptr_t)user_filename, test, PATH_MAX);
-	if (result) {
-		*retval = 0;
-		return result;
-	}
-	int len = strlen(user_filename);
-	filename = kmalloc(len + 1);
-	if (!filename)
+
+	struct vnode *vn;
+	struct file_obj *file;
+	int err = 0;
+	int fd;
+	unsigned ret = 0;
+	char *kpath;
+
+	// Copy the filename into the kernel
+	kpath = kmalloc(PATH_MAX);
+	if (kpath == NULL) {
+		*retval = -1;
 		return ENOMEM;
-	strcpy(filename, user_filename);
+	}
+	err = copyinstr((const_userptr_t)filename, kpath, PATH_MAX, &ret);
+	if (err) {
+		kfree(kpath);
+		*retval = -1;
+		return err;
+	}
+	if (ret == PATH_MAX && kpath[ret-1] != 0) {
+		kfree(kpath);
+		*retval = -1;
+		return ENAMETOOLONG;
+	}
 
 	// Open file
-	err = vfs_open(filename, flags, mode, &vn);
-	kfree(filename);
+	err = vfs_open(kpath, flags, mode, &vn);
+	kfree(kpath);
 	if (err)
 		return err;
 
@@ -314,19 +318,12 @@ int sys_dup2(int oldfd, int newfd, int *retval) {
  * @return            should always return 0
  */
 int sys_close(int filehandle, int *retval) {
-	if (filehandle > OPEN_MAX || filehandle < 0) {
-		if (retval)
-			*retval = -1;
-		return EBADF;
-	}
-	
-	struct file_obj *file = curproc->p_filetable->filetable_files[filehandle];
+	struct file_obj **ft = curproc->p_filetable->filetable_files;
+	struct file_obj *file;
 
-	if(file == NULL) {
-		if (retval)
-			*retval = -1;
+	if (filehandle < 0 || filehandle >= OPEN_MAX || ft[filehandle] == NULL)
 		return EBADF;
-	}
+	file = ft[filehandle];
 
 	// Decrease refcounts, and close & remove if 0
 	lock_acquire(file->file_lock);
