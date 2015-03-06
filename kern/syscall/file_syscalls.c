@@ -310,6 +310,12 @@ int sys_dup2(int oldfd, int newfd, int *retval) {
  * @return            should always return 0
  */
 int sys_close(int filehandle, int *retval) {
+	if (filehandle > OPEN_MAX || filehandle < 0) {
+		if (retval)
+			*retval = -1;
+		return EBADF;
+	}
+	
 	struct file_obj *file = curproc->p_filetable->filetable_files[filehandle];
 
 	if(file == NULL) {
