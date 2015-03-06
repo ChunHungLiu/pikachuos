@@ -254,6 +254,9 @@ proc_create_runprogram(const char *name)
 	/* VFS fields */
 
 	newproc->p_filetable = NULL;
+	newproc->parent_pid = KPROC_PID;
+	newproc->exited = false;
+	newproc->exitcode = 0;
 
 	/*
 	 * Lock the current process to copy its current directory.
