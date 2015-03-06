@@ -79,7 +79,8 @@ void
 syscall(struct trapframe *tf)
 {
 	int callno;
-	int32_t retval;
+	int32_t retval, retval2;
+	bool ret64 = false;
 	int err;
 
 	KASSERT(curthread != NULL);
@@ -98,6 +99,7 @@ syscall(struct trapframe *tf)
 	 */
 
 	retval = 0;
+	retval2 = 0;
 
 	switch (callno) {
 	    case SYS_reboot:
@@ -122,8 +124,9 @@ syscall(struct trapframe *tf)
 	    err = sys_write(tf->tf_a0, (void *)tf->tf_a1, tf->tf_a2, &retval);
 	    break;
 
-	    case SYS_lseek:	// fd         pos1       pos2       whence
-	    err = sys_lseek_32(tf->tf_a0, tf->tf_a1, tf->tf_a2, tf->tf_a3, &retval);
+	    case SYS_lseek:
+	    ret64 = true;	// fd         pos1       pos2       whence
+	    err = sys_lseek_32(tf->tf_a0, tf->tf_a2, tf->tf_a3, tf->tf_a1, (uint32_t*) &retval, (uint32_t*) &retval2);
 	    break;
 
 	    case SYS_dup2:
@@ -181,6 +184,8 @@ syscall(struct trapframe *tf)
 	else {
 		/* Success. */
 		tf->tf_v0 = retval;
+		if (ret64)
+			tf->tf_v1 = retval2;
 		tf->tf_a3 = 0;      /* signal no error */
 	}
 

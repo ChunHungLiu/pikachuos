@@ -76,7 +76,7 @@ int sys_read(int filehandle, void *buf, size_t size, int *retval)
 	struct file_obj *file;
 	int err = 0;
 
-	if (filehandle < 0 || filehandle > OPEN_MAX || ft[filehandle] == NULL)
+	if (filehandle < 0 || filehandle >= OPEN_MAX || ft[filehandle] == NULL)
 		return EBADF;
 	file = ft[filehandle];
 
@@ -130,9 +130,10 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 
 	//lock_acquire(curproc->p_filetable->filetable_lock);
 
-	if (filehandle < 0 || filehandle > OPEN_MAX || ft[filehandle] == NULL)
+	if (filehandle < 0 || filehandle >= OPEN_MAX || ft[filehandle] == NULL)
 		return EBADF;
 	file = ft[filehandle];
+	KASSERT(file->file_lock != (void *) 0xdeadbeef);
 
 	//lock_release(curproc->p_filetable->filetable_lock);
 
@@ -170,18 +171,24 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 }
 
 /**
- * Wrapper for lseek when only 32-bit values can be passed in (e.g. in syscall.c)
- * @param  fd     file descriptor to seek
- * @param  pos1   upper (lower) 32 bits of the offset
- * @param  pos2   lower (upper) 32 bits of the offset
- * @param  whence position to seek from
- * @param  retval pointer to the place to store the new position
- * @return        0 if successful, otherwise the error code
+ * Wrapper for lseek when only 32-bit values can be passed in (e.g. in 
+ * syscall.c) and sent back
+ * @param  fd      file descriptor to seek
+ * @param  pos1    upper (lower) 32 bits of the offset
+ * @param  pos2    lower (upper) 32 bits of the offset
+ * @param  whence  position to seek from
+ * @param  retval  pointer to the place to store the new position (upper 32 bits)
+ * @param  retval2 pointer to the place to store the new position (lower 32 bits)
+ * @return         0 if successful, otherwise the error code
  */
-off_t sys_lseek_32(int fd, int pos1, int pos2, int whence, int *retval) {
+int sys_lseek_32(int fd, int pos1, int pos2, int whence, uint32_t *retval, uint32_t *retval2) {
 	uint64_t pos;
+	off_t ret;
 	join32to64(pos1, pos2, &pos);
-	return sys_lseek(fd, pos, whence, retval);
+	int err;
+	err = sys_lseek(fd, pos, whence, &ret);
+	split64to32(ret, retval, retval2);
+	return err;
 }
 
 
@@ -194,21 +201,21 @@ off_t sys_lseek_32(int fd, int pos1, int pos2, int whence, int *retval) {
  * @param  retval pointer to the place to store the new position
  * @return        0 if successful, otherwise the error code
  */
-off_t sys_lseek(int fd, off_t pos, int whence, int *retval) {
+int sys_lseek(int fd, off_t pos, int whence, off_t *retval) {
 	struct file_obj **ft = curproc->p_filetable->filetable_files;
 	struct file_obj *file;
 	struct stat f_stat;
 
-	kprintf("aasdf\n");
-
-	if (fd < 0 || fd > OPEN_MAX || ft[fd] == NULL)
+	if (fd < 0 || fd >= OPEN_MAX || ft[fd] == NULL)
 		return EBADF;
 	file = ft[fd];
 
 	lock_acquire(file->file_lock);
 
-	if (!VOP_ISSEEKABLE(file->file_node))
+	if (!VOP_ISSEEKABLE(file->file_node)) {
+		lock_release(file->file_lock);
 		return ESPIPE;
+	}
 
 	switch(whence) {
 		case SEEK_SET:
@@ -224,11 +231,14 @@ off_t sys_lseek(int fd, off_t pos, int whence, int *retval) {
 			file->pos = f_stat.st_size + pos;
 			break;
 		default:
+			lock_release(file->file_lock);
 			return EINVAL;
 	}
 
-	if (file->pos < 0)
+	if (file->pos < 0) {
+		lock_release(file->file_lock);
 		return EINVAL;
+	}
 
 	*retval = file->pos;
 
@@ -256,8 +266,8 @@ int sys_dup2(int oldfd, int newfd, int *retval) {
 	struct file_obj *old_file;
 
 	// Check that all file descriptors are in range and the old one is active
-	if (oldfd < 0 || oldfd > OPEN_MAX || ft[oldfd] == NULL ||
-		newfd < 0 || newfd > OPEN_MAX) {
+	if (oldfd < 0 || oldfd >= OPEN_MAX || ft[oldfd] == NULL ||
+		newfd < 0 || newfd >= OPEN_MAX) {
 		*retval = -1;
 		return EBADF;
 	}

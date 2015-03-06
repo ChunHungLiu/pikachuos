@@ -166,6 +166,7 @@ lock_create(const char *name)
 void
 lock_destroy(struct lock *lock)
 {
+    kprintf(" Destroy %p\n", lock);
         KASSERT(lock != NULL);
         KASSERT(lock->lk_holder == NULL);
 
