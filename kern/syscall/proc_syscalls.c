@@ -105,6 +105,8 @@ int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval) {
 	(void) returncode;
 	(void) flags;
 	(void) retval;
+	int *test = kmalloc(sizeof(int));
+	int result;
 
 	// TODO: a lot of sanity checks for this one.
 	if (pid < 1 || pid > PID_MAX){
@@ -117,8 +119,11 @@ int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval) {
 		return EINVAL;
 	}
 
-	if (returncode == NULL) {
-		return EINVAL;
+	if (returncode != NULL) {
+		result = copyin(returncode, test, sizeof(int));
+		if (result) {
+			return result;
+		}
 	}
 
 	// TODO: what's the _MKWAIT_EXIT stuff?

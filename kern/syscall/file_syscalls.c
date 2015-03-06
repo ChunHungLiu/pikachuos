@@ -306,7 +306,11 @@ int sys_dup2(int oldfd, int newfd, int *retval) {
 int sys_close(int filehandle, int *retval) {
 	struct file_obj *file = curproc->p_filetable->filetable_files[filehandle];
 
-	KASSERT(file != NULL);
+	if(file == NULL) {
+		if (retval)
+			*retval = -1;
+		return EBADF;
+	}
 
 	// Decrease refcounts, and close & remove if 0
 	lock_acquire(file->file_lock);
