@@ -1,6 +1,7 @@
 #include <types.h>
 #include <kern/errno.h>
 #include <kern/fcntl.h>
+#include <kern/wait.h>
 #include <lib.h>
 #include <proc.h>
 #include <current.h>
@@ -89,7 +90,7 @@ void sys__exit(int exitcode) {
 
 		// TODO: This is probably not a good design
 		curproc->exited = true;
-		curproc->exitcode = exitcode;
+		curproc->exitcode = _MKWAIT_EXIT(exitcode);
 		// Wake up parent
 		cv_signal(curproc->waitpid_cv, proc_table_lock);
 	}
@@ -106,10 +107,33 @@ int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval) {
 	(void) retval;
 
 	// TODO: a lot of sanity checks for this one.
-	
+	if (pid < 1 || pid > PID_MAX){
+		return ESRCH;
+	}
+	if (pid == curproc->pid) {
+		return ECHILD;
+	}
+	if (flags != 0 && flags != WNOHANG) {
+		return EINVAL;
+	}
+
+	if (returncode == NULL) {
+		return EINVAL;
+	}
+
 	// TODO: what's the _MKWAIT_EXIT stuff?
 	lock_acquire(proc_table_lock);
 	struct proc *child = proc_table[pid];
+
+	if (child == NULL) {
+		lock_release(proc_table_lock);
+		return ESRCH;
+	}
+
+	if (child->parent_pid != curproc->pid) {
+		lock_release(proc_table_lock);
+		return ECHILD;
+	}
 
 	if (!child->exited) {
 		// We always wait on the child's cv
@@ -145,7 +169,12 @@ int sys_execv(char* progname, char** args, int *retval) {
 	args_len = kmalloc(sizeof(int) * 1024);
 	temp = kmalloc(sizeof(char) * ARG_MAX);
 
-	if (args == NULL) {
+	if (kern_progname == NULL || args_len == NULL || temp == NULL){
+		*retval = -1;
+		return ENOMEM;
+	}
+
+	if (args == NULL || progname == NULL) {
 		*retval = -1;
         return EFAULT;
     }
@@ -195,7 +224,7 @@ int sys_execv(char* progname, char** args, int *retval) {
 	result = copyinstr((userptr_t)progname, kern_progname, PATH_MAX, NULL);
 	if (*kern_progname == 0) {
 		*retval = -1;
-		return ENOENT;
+		return EISDIR;
 	}
 	if (result) {
 		kfree(kern_progname);
@@ -210,7 +239,7 @@ int sys_execv(char* progname, char** args, int *retval) {
 		return result;
 	}
 
-	// Blow up the current addrspace
+	// Blow up the current addrspace. TODO, this may be problematic
 	as_destroy(curproc->p_addrspace);
     curproc->p_addrspace = NULL;
 
