@@ -40,7 +40,7 @@ define threadlist
 end
 document threadlist
 Dump a threadlist.
-Usage: threadlist mycpu->c_runqueue
+Usage: threadlist mycpu->c_runqueues[i]
 end
 
 define allcpus
@@ -52,7 +52,7 @@ define allcpus
 	set $ln = $c->c_spinlocks
 	set $t = $c->c_curthread
 	set $zom = $c->c_zombies.tl_count
-	set $rn = $c->c_runqueue.tl_count
+	set $rn = $c->c_runqueues[$c->cur_queue].tl_count
 	printf "cpu %u @0x%x: ", $i, $c
 	if ($id)
 	    printf "idle, "

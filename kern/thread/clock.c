@@ -103,7 +103,12 @@ hardclock(void)
 	if ((curcpu->c_hardclocks % SCHEDULE_HARDCLOCKS) == 0) {
 		schedule();
 	}
-	thread_yield();
+
+	// Kick off threads when their time runs out
+	curthread->time_left--;
+	if (curthread->time_left <= 0) {
+		thread_yield();
+	}
 }
 
 /*

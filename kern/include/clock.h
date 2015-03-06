@@ -50,7 +50,7 @@
 #define HZ  10000
 #else
 /* More realistic value */
-#define HZ  100
+#define HZ  100 // 100
 #endif
 
 void hardclock_bootstrap(void);
