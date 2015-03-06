@@ -93,8 +93,10 @@ int sys_read(int filehandle, void *buf, size_t size, int *retval)
 	lock_acquire(file->file_lock);
 
 	// Get info
-	if (file->file_mode != O_RDONLY && file->file_mode != O_RDWR) {
-		return EPERM;
+	if ((file->file_mode & O_ACCMODE) != O_RDONLY && 
+		(file->file_mode & O_ACCMODE) != O_RDWR) {
+		lock_release(file->file_lock);
+		return EBADF;
 	}
 
 	// Create uio object for handing reading
@@ -150,8 +152,10 @@ int sys_write(int filehandle, const void *buf, size_t size, int *retval)
 	lock_acquire(file->file_lock);
 
 	// Get info
-	if (file->file_mode != O_WRONLY && file->file_mode != O_RDWR) {
-		return EPERM;
+	if ((file->file_mode & O_ACCMODE) != O_WRONLY && 
+		(file->file_mode & O_ACCMODE) != O_RDWR) {
+		lock_release(file->file_lock);
+		return EBADF;
 	}
 
 	// Create uio object for handling reading
