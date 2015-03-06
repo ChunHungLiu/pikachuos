@@ -216,14 +216,17 @@ int sys_lseek(int fd, off_t pos, int whence, off_t *retval) {
 	struct file_obj *file;
 	struct stat f_stat;
 
-	if (fd < 0 || fd >= OPEN_MAX || ft[fd] == NULL)
+	if (fd < 0 || fd >= OPEN_MAX || ft[fd] == NULL) {
+		*retval = -1;
 		return EBADF;
+	}
 	file = ft[fd];
 
 	lock_acquire(file->file_lock);
 
 	if (!VOP_ISSEEKABLE(file->file_node)) {
 		lock_release(file->file_lock);
+		*retval = -1;
 		return ESPIPE;
 	}
 
@@ -242,11 +245,13 @@ int sys_lseek(int fd, off_t pos, int whence, off_t *retval) {
 			break;
 		default:
 			lock_release(file->file_lock);
+			*retval = -1;
 			return EINVAL;
 	}
 
 	if (file->pos < 0) {
 		lock_release(file->file_lock);
+		*retval = -1;
 		return EINVAL;
 	}
 
@@ -289,6 +294,7 @@ int sys_dup2(int oldfd, int newfd, int *retval) {
 	lock_acquire(curproc->p_filetable->filetable_lock);
 
 	ft[newfd] = old_file;
+	old_file->file_refcount++;
 
 	lock_release(curproc->p_filetable->filetable_lock);
 
