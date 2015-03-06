@@ -149,8 +149,8 @@ thread_create(const char *name)
 	thread->t_context = NULL;
 	thread->t_cpu = NULL;
 	thread->t_proc = NULL;
-	thread->priority = NUM_RUN_QUEUES - 1;
-	thread->time_left = 1 << (NUM_RUN_QUEUES - 1);
+	thread->priority = 0;
+	thread->time_left = 1;
 
 	/* Interrupt state fields */
 	thread->t_in_interrupt = false;
@@ -247,7 +247,7 @@ cpu_create(unsigned hardware_number)
 /*
  * Destroy a thread.
  *
- * This function cannot be called in the victim thread's own context.
+ * This function cannot be called in the `victim thread's own context.
  * Nor can it be called on a running thread.
  *
  * (Freeing the stack you're actually using to run is ... inadvisable.)
@@ -578,6 +578,7 @@ static
 void
 thread_switch(threadstate_t newstate, struct wchan *wc, struct spinlock *lk)
 {
+
 	struct thread *cur, *next;
 	int spl;
 
@@ -594,6 +595,8 @@ thread_switch(threadstate_t newstate, struct wchan *wc, struct spinlock *lk)
 	 * when the timer interrupt interrupts the idle loop.
 	 */
 	if (curcpu->c_isidle) {
+		// Give the current process more time -- nothing else to do
+		cur->time_left = 1 << cur->priority;
 		splx(spl);
 		return;
 	}
@@ -616,17 +619,33 @@ thread_switch(threadstate_t newstate, struct wchan *wc, struct spinlock *lk)
 	// 	return;
 	// }
 
+	/* Set the priority and time for the current thread */
+	switch(curthread->t_state) {
+	case S_RUN:
+		// thread was just forced off, give it more time
+		// Note: 0 is highest priority
+		cur->priority++;
+		if (cur->priority >= NUM_RUN_QUEUES) {
+			cur->priority = NUM_RUN_QUEUES - 1;
+		}
+		break;
+	case S_READY:
+		// thread blocked, reduce time
+		cur->priority--;
+		if (cur->priority < 0) {
+			cur->priority = 0;
+		}
+		break;
+	default:
+		break;
+	}
+	cur->time_left = 1 << cur->priority;
+
 	/* Put the thread in the right place. */
 	switch (newstate) {
 	case S_RUN:
 		panic("Illegal S_RUN in thread_switch\n");
 	case S_READY:
-		// Add this thread to a lower priority run queue. 
-		cur->priority--;
-		if (cur->priority < 0) {
-			cur->priority = 0;
-		}
-		cur->time_left = 1 << cur->priority;
 		// thread_make_runnable handles adding to the queue
 		thread_make_runnable(cur, true /*have lock*/);
 		break;
@@ -640,12 +659,6 @@ thread_switch(threadstate_t newstate, struct wchan *wc, struct spinlock *lk)
 		 * caller of wchan_sleep locked it until the thread is
 		 * on the list.
 		 */
-		cur->priority++;
-		cur->priority *= 2;
-		if (cur->priority >= NUM_RUN_QUEUES) {
-			cur->priority = NUM_RUN_QUEUES - 1;
-		}
-		cur->time_left = 1 << cur->priority;
 		threadlist_addtail(&wc->wc_threads, cur);
 		spinlock_release(lk);
 		break;
@@ -675,17 +688,31 @@ thread_switch(threadstate_t newstate, struct wchan *wc, struct spinlock *lk)
 
 	/* The current cpu is now idle. */
 	curcpu->c_isidle = true;
+
+	/* Start looking from the next queue */
+	unsigned i, queue;
+	next = NULL;
 	do {
-		// Iterate round-robin over the different level queues
-		curcpu->cur_queue++;
-		if (curcpu->cur_queue >= NUM_RUN_QUEUES) {
-			curcpu->cur_queue = 0;
+		// Find the next non-empty run queue
+		for (i = 0; i < NUM_RUN_QUEUES; i++) {
+			queue = (curcpu->cur_queue + i + 1) % NUM_RUN_QUEUES;
+
+			// Get the next thread
+			next = threadlist_remhead(
+				&curcpu->c_runqueues[queue]);
+			if (next) {
+				break;
+			}
+
 		}
-		next = threadlist_remhead(&curcpu->c_runqueues[curcpu->cur_queue]);
 		if (next == NULL) {
 			spinlock_release(&curcpu->c_runqueue_lock);
 			cpu_idle();
 			spinlock_acquire(&curcpu->c_runqueue_lock);
+		}
+		curcpu->cur_queue = queue;
+		if (curcpu->cur_queue >= NUM_RUN_QUEUES) {
+			curcpu->cur_queue = 0;
 		}
 	} while (next == NULL);
 	curcpu->c_isidle = false;
@@ -944,6 +971,12 @@ thread_consider_migration(void)
 	// Greedily pull from the highest priority queue until we're close
 	while (true) {	// Breakout condition is complicated
 		t = threadlist_remtail(&curcpu->c_runqueues[i]);
+		if (t == NULL) {
+			if (i == 0)
+				break;
+			i--;
+			continue;
+		}
 		if (to_send < sent + (1 << t->priority)) {
 			// We've overshot, so add that thread back to the list
 			threadlist_addtail(&curcpu->c_runqueues[i], t);

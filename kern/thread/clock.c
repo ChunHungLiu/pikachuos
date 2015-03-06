@@ -51,7 +51,7 @@
  * the scheduler.
  */
 #define SCHEDULE_HARDCLOCKS	4	/* Reschedule every 4 hardclocks. */
-#define MIGRATE_HARDCLOCKS	128	/* Migrate every 16 hardclocks. */
+#define MIGRATE_HARDCLOCKS	16	/* Migrate every 16 hardclocks. */
 
 /*
  * Once a second, everything waiting on lbolt is awakened by CPU 0.
@@ -98,18 +98,15 @@ hardclock(void)
 
 	curcpu->c_hardclocks++;
 	if ((curcpu->c_hardclocks % MIGRATE_HARDCLOCKS) == 0) {
-		//thread_consider_migration();
+		thread_consider_migration();
 	}
 	if ((curcpu->c_hardclocks % SCHEDULE_HARDCLOCKS) == 0) {
 		schedule();
 	}
 
 	// Kick off threads when their time runs out
-	KASSERT(curthread->time_left);	/* If false, the thread should not be running in the first place */
 	curthread->time_left--;
-	kprintf("Time left: %d", curthread->time_left);
-	if (!curthread->time_left) {
-		kprintf("Yield\n");
+	if (curthread->time_left <= 0) {
 		thread_yield();
 	}
 }

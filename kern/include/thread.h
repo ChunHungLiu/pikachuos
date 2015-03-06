@@ -84,7 +84,7 @@ struct thread {
 	struct cpu *t_cpu;		/* CPU thread runs on */
 	struct proc *t_proc;		/* Process thread belongs to */
 	int priority;	/* Priority used for Multi Level Feedback Queues */
-	unsigned time_left;	/* Number of slices this thread can still run for */
+	int time_left;	/* Number of slices this thread can still run for */
 
 	/*
 	 * Interrupt state fields.
