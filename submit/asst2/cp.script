@@ -1,0 +1,53 @@
+Script started on Fri Mar  6 06:50:55 2015
+[1m[32m[jharvard@appliance ~/cs161[35m[32m]$(B[m cd root
+[1m[32m[jharvard@appliance ~/cs161/root[35m[32m]$(B[m sys161 kernel
+sys161: System/161 release 2.0.2, compiled Jan 29 2015 16:18:48
+
+OS/161 base system version 2.0
+Copyright (c) 2000, 2001-2005, 2008-2011, 2013, 2014
+   President and Fellows of Harvard College.  All rights reserved.
+
+Put-your-group-name-here's system version 0 (ASST2 #251)
+
+7756k physical memory available
+Device probe...
+lamebus0 (system main bus)
+emu0 at lamebus0
+ltrace0 at lamebus0
+ltimer0 at lamebus0
+beep0 at ltimer0
+rtclock0 at ltimer0
+lrandom0 at lamebus0
+random0 at lrandom0
+lhd0 at lamebus0
+lhd1 at lamebus0
+lser0 at lamebus0
+con0 at lser0
+
+cpu0: MIPS/161 (System/161 2.x) features 0x0
+cpu1: MIPS/161 (System/161 2.x) features 0x0
+buffers: max count 4096; max size 2048k
+OS/161 kernel [? for menu]: s
+(program name unknown): Timing enabled.
+OS/161$ cat test
+Hello World from Tianyu & David!
+(program name unknown): subprocess time: 0.247889407 seconds
+OS/161$ cp test test2
+(program name unknown): subprocess time: 0.205045575 seconds
+OS/161$ cat test2
+Hello World from Tianyu & David!
+(program name unknown): subprocess time: 0.247747856 seconds
+OS/161$ exit
+Operation took 18.392136599 seconds
+OS/161 kernel [? for menu]: p /sbin/poweroff
+Shutting down.
+The system is halted.
+cpu1: offline.
+sys161: 784181660 cycles (73526506 run, 710655154 global-idle)
+sys161:   cpu0: 24653202 kern, 28406 user, 101704 idle; 20926 ll, 20926/0 sc, 65538 sync
+sys161:   cpu1: 1473822 kern, 0 user, 23309490 idle; 343 ll, 343/0 sc, 1407 sync
+sys161: 2539 irqs 1161 exns 0r/0w disk 57r/1154w console 53r/2w/19m emufs 0r/0w net
+sys161: Elapsed real time: 29.130690 seconds (26.9194 mhz)
+sys161: Elapsed virtual time: 31.371558824 seconds (25 mhz)
+[1m[32m[jharvard@appliance ~/cs161/root[35m[32m]$(B[m 
+Script done on Fri Mar  6 06:51:34 2015

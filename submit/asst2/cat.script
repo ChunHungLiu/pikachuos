@@ -1,0 +1,48 @@
+Script started on Fri Mar  6 06:48:43 2015
+[1m[32m[jharvard@appliance ~/cs161[35m[32m]$(B[m s cd root
+[1m[32m[jharvard@appliance ~/cs161/root[35m[32m]$(B[m cd  sys161 kernel
+sys161: System/161 release 2.0.2, compiled Jan 29 2015 16:18:48
+
+OS/161 base system version 2.0
+Copyright (c) 2000, 2001-2005, 2008-2011, 2013, 2014
+   President and Fellows of Harvard College.  All rights reserved.
+
+Put-your-group-name-here's system version 0 (ASST2 #251)
+
+7756k physical memory available
+Device probe...
+lamebus0 (system main bus)
+emu0 at lamebus0
+ltrace0 at lamebus0
+ltimer0 at lamebus0
+beep0 at ltimer0
+rtclock0 at ltimer0
+lrandom0 at lamebus0
+random0 at lrandom0
+lhd0 at lamebus0
+lhd1 at lamebus0
+lser0 at lamebus0
+con0 at lser0
+
+cpu0: MIPS/161 (System/161 2.x) features 0x0
+cpu1: MIPS/161 (System/161 2.x) features 0x0
+buffers: max count 4096; max size 2048k
+OS/161 kernel [? for menu]: s
+(program name unknown): Timing enabled.
+OS/161$ cat test
+Hello World from Tianyu & David!
+(program name unknown): subprocess time: 0.247731191 seconds
+OS/161$ eixt   xit
+Operation took 40.928017436 seconds
+OS/161 kernel [? for menu]: p /sbin/poweroff
+Shutting down.
+The system is halted.
+cpu1: offline.
+sys161: 1461742284 cycles (58376180 run, 1403366104 global-idle)
+sys161:   cpu0: 16508656 kern, 11383 user, 101704 idle; 16021 ll, 16021/0 sc, 53803 sync
+sys161:   cpu1: 1473496 kern, 0 user, 15148247 idle; 343 ll, 343/0 sc, 1407 sync
+sys161: 2102 irqs 568 exns 0r/0w disk 39r/964w console 29r/0w/9m emufs 0r/0w net
+sys161: Elapsed real time: 56.743528 seconds (25.7605 mhz)
+sys161: Elapsed virtual time: 58.473983593 seconds (25 mhz)
+[1m[32m[jharvard@appliance ~/cs161/root[35m[32m]$(B[m 
+Script done on Fri Mar  6 06:49:56 2015

@@ -1,0 +1,44 @@
+Script started on Fri Mar  6 06:50:11 2015
+[1m[32m[jharvard@appliance ~/cs161[35m[32m]$(B[m cd root
+[1m[32m[jharvard@appliance ~/cs161/root[35m[32m]$(B[m sys161 kernel
+sys161: System/161 release 2.0.2, compiled Jan 29 2015 16:18:48
+
+OS/161 base system version 2.0
+Copyright (c) 2000, 2001-2005, 2008-2011, 2013, 2014
+   President and Fellows of Harvard College.  All rights reserved.
+
+Put-your-group-name-here's system version 0 (ASST2 #251)
+
+7756k physical memory available
+Device probe...
+lamebus0 (system main bus)
+emu0 at lamebus0
+ltrace0 at lamebus0
+ltimer0 at lamebus0
+beep0 at ltimer0
+rtclock0 at ltimer0
+lrandom0 at lamebus0
+random0 at lrandom0
+lhd0 at lamebus0
+lhd1 at lamebus0
+lser0 at lamebus0
+con0 at lser0
+
+cpu0: MIPS/161 (System/161 2.x) features 0x0
+cpu1: MIPS/161 (System/161 2.x) features 0x0
+buffers: max count 4096; max size 2048k
+OS/161 kernel [? for menu]: pwd
+emu0:
+Operation took 0.011923760 seconds
+OS/161 kernel [? for menu]: p /sbin/powerfoo   off
+Shutting down.
+The system is halted.
+cpu1: offline.
+sys161: 309300732 cycles (42626724 run, 266674008 global-idle)
+sys161:   cpu0: 9161004 kern, 20 user, 101704 idle; 10582 ll, 10582/0 sc, 40979 sync
+sys161:   cpu1: 1474040 kern, 0 user, 7788688 idle; 343 ll, 343/0 sc, 1407 sync
+sys161: 1599 irqs 5 exns 0r/0w disk 27r/800w console 8r/0w/3m emufs 0r/0w net
+sys161: Elapsed real time: 11.020701 seconds (28.0654 mhz)
+sys161: Elapsed virtual time: 12.376319646 seconds (25 mhz)
+[1m[32m[jharvard@appliance ~/cs161/root[35m[32m]$(B[m 
+Script done on Fri Mar  6 06:50:41 2015
