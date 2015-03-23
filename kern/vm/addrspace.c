@@ -139,7 +139,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	(void)readable;
 	(void)writeable;
 	(void)executable;
-	return EUNIMP;
+	return ENOSYS;
 }
 
 int
