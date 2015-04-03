@@ -454,3 +454,15 @@ file		test/synchtest.c
 file		test/kmalloctest.c
 file		test/fstest.c
 optfile net	test/nettest.c
+
+#########################################
+#					                    #
+#	        Virtual Memory 		        #
+#	   	      			                #
+#########################################
+
+file        arch/mips/vm/vm.c
+file        arch/mips/vm/coremap.c
+file        arch/mips/vm/tlb.c
+file        vm/paging.c
+file        syscall/sbrk.c
