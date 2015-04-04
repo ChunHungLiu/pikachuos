@@ -28,7 +28,7 @@ pt_entry_t* page_create() {
 void page_evict_any() {
 	// Code goes here
 	spinlock_acquire(coremap_lock);
-
+	
 	spinlock_release(coremap_lock);
 }
 #elif PAGE_CLOCK
