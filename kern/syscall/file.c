@@ -1,3 +1,4 @@
+
 #include <types.h>
 #include <kern/errno.h>
 #include <kern/fcntl.h>
@@ -31,7 +32,7 @@ struct file_obj* file_obj_create(struct vnode *vn, int flags) {
 	file->file_refcount = 1;
 	file->file_mode = flags & O_ACCMODE;
 
-	// No lock? Assume we're out of memory. TODO: what dbelse could happen?
+	// No lock? Assume we're out of memory.
 	if (!file->file_lock) {
 		kfree(file);
 		return NULL;
@@ -75,7 +76,6 @@ int filetable_init() {
 	int err = 0;
 
 	// kprintf("filetable_init called");
-	// TODO: sanity checks
 	curproc->p_filetable = kmalloc(sizeof(struct filetable));
 	for (int fd = 0; fd < OPEN_MAX; fd ++) {
 		curproc->p_filetable->filetable_files[fd] = NULL;
@@ -87,7 +87,7 @@ int filetable_init() {
 	err = console_open(O_RDONLY, &stdin);
 	err = console_open(O_WRONLY, &stdout);
 	err = console_open(O_WRONLY, &stderr);
-	// Sanity check for stdin/out/err fd. TODO: More checks?
+	// Sanity check for stdin/out/err fd.
 	// There shouldn't be any other open file descriptors when this is called
 	KASSERT(stdin == 0);
 	KASSERT(stdout == 1);

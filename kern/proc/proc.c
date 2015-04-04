@@ -55,7 +55,6 @@
 struct proc *kproc;
 struct proc *proc_table[PID_MAX];
 
-// TODO: everything needs to be synced.
 struct lock *proc_table_lock;
 /*
  * Create a proc structure.
@@ -92,8 +91,6 @@ proc_create(const char *name)
 
 	proc->waitpid_cv = cv_create("waitpid_cv");
 
-	// TODO: This is causing deadlock on bootup
-	// lock_acquire(proc_table_lock);
 	if (proc_table[KPROC_PID] == NULL) {
 		proc->pid = KPROC_PID;
 	} else {
@@ -101,19 +98,16 @@ proc_create(const char *name)
 		proc->pid = new_pid();		
 	}
 	proc_table[proc->pid] = proc;
-	// lock_release(proc_table_lock);
 
 	return proc;
 }
 
 pid_t new_pid() {
-	// KASSERT(lock_do_i_hold(proc_table_lock));
 	for (int pid = 1; pid < PID_MAX; pid++) {
 		if (proc_table[pid] == NULL){
 			return (pid_t)pid;
 		}
 	}
-	// TODO: OUT OF PID
 	return -1;
 }
 
