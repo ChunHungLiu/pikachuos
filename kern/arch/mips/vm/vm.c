@@ -15,7 +15,8 @@
 #include <mainbus.h>
 
 static // ???
-struct cm_entry* coremap;
+pt_entry
+cm_entry* coremap;
 
 static
 struct spinlock coremap_lock;
@@ -24,13 +25,16 @@ struct spinlock coremap_lock;
 void vm_bootstrap(void)
 {
 	// If this isn't 8, we're wasting space
-	KASSERT(sizeof(struct cm_entry) == 8);
+	KASSERT(sizeof(pt_entry
+cm_entry) == 8);
 
 	// Calculate how many cm_entries we need and nicely steal it
 	// Slightly inefficient since firstpaddr might not be 0, but whatevs
 	uint32_t page_count = mainbus_ramsize() / PAGE_SIZE;
-	coremap = (struct cm_entry*) firstpaddr;
-	firstpaddr += page_count * sizeof(struct cm_entry);
+	coremap = (pt_entry
+cm_entry*) firstpaddr;
+	firstpaddr += page_count * sizeof(pt_entry
+cm_entry);
 
 	(void) coremap;
 	(void) coremap_lock;
@@ -66,7 +70,8 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 	panic("Get off your ass and start coding me!!!\n");
 }
 
-static struct pt_entry* get_pt_entry(vaddr_t v_addr) {
+static pt_entry
+pt_entry* get_pt_entry(vaddr_t v_addr) {
 	(void) v_addr;
 	return NULL;
 }
@@ -83,7 +88,8 @@ void tlb_replacer(uint32_t tlbhi, uint32_t tlblo, int faulttype, vaddr_t faultad
 
 int vm_fault(int faulttype, vaddr_t faultaddress)
 {
-	struct pt_entry *page;
+	pt_entry
+pt_entry *page;
 	uint32_t tlbhi, tlblo;
 	switch (faulttype) {
 		case VM_FAULT_READ:

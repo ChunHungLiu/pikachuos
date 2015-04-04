@@ -464,8 +464,5 @@ optfile net	test/nettest.c
 #	   	      			                #
 #########################################
 
-file        arch/mips/vm/vm.c
-file        arch/mips/vm/coremap.c
-file        arch/mips/vm/tlb.c
 file        vm/paging.c
 file        syscall/sbrk.c

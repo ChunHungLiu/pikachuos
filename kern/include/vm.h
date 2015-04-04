@@ -43,10 +43,6 @@
 #define VALID		0x00000200
 #define GLOBAL		0x00000100
 
-/* Macros for access to the pagetable entry */
-#define PT_SET_DIRTY(PE) ((PE).p_addr |= DIRTY)
-#define PT_SET_CLEAN(PE) ((PE).p_addr &= !DIRTY)
-
 /* Macros for access to the coremap entry */
 #define CM_IS_KERNEL(CE) (1 & (CE).vm_addr)
 #define CM_ALLOCATED(CE) (2 & (CE).vm_addr)
@@ -58,19 +54,13 @@
 #define CM_SET_HAS_NEXT(CE, value)  ((CE).vm_addr = (CE).vm_addr & 0xFFFFFFFB | (value << 2))
 #define CM_SET_VM_ADDR(CE, value)   ((CE).vm_addr = (CE).vm_addr & 0x00000FFF | (value << 12))
 
-struct pt_entry {
-    paddr_t p_addr;			// The corresponding translation of the physical address. It will include both the 20 bit physical address and 10 bits of TLB flags 
-    short store_index;		// Where the entry is located in backing storage. Negative if not on disk.
-    bool in_memory;			// true if the page is in memory
-};
-
-struct cm_entry {
+typedef struct {
 	vaddr_t vm_addr;		// The vm translation of the physical address. Only upper 20 bits get used
 	//bool is_kernel;		// Note if this is a kernel page or not
 	//bool allocated;		// Note if the physical address is allocated or not
 	//bool has_next;		// Indicating that we have a cross-page allocation. Only used for the kernel???
 	int pid;			// The process who owns this memory
-};
+} cm_entry_t;
 
 #include <machine/vm.h>
 
