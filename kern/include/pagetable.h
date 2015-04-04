@@ -1,7 +1,7 @@
-// TODO: paging interface goes here
+// TODO: pagetable interface goes here
 
-#ifndef _PAGING_H_
-#define _PAGING_H_
+#ifndef _PAGETABLE_H_
+#define _PAGETABLE_H_
 
 #include <vm.h>
 #include <coremap.h>
