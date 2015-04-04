@@ -21,33 +21,3 @@ pt_entry_t* page_create() {
 	// Code goes here
 	return kmalloc(sizeof(pt_entry_t));
 }
-
-/* Evict the "next" page from memory. This will be dependent on the eviction policy that we choose (clock, random, etc.). This is where we will switch out different eviction policies */
-// Consider returning the page we evicted
-#ifdef PAGE_RANDOM
-void page_evict_any() {
-	// Code goes here
-	spinlock_acquire(coremap_lock);
-	
-	spinlock_release(coremap_lock);
-}
-#elif PAGE_CLOCK
-void page_evict_any() {
-
-}
-#endif
-
-/* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
-void page_evict(pt_entry_t* page) {
-	// Code goes here
-}
-
-/* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
-void page_load(pt_entry_t* page) {
-	// Code goes here
-}
-
-/* Load page from the backing store into a specific page of physical memory (used as a helper function for page_load) */
-void page_load_into(pt_entry_t* page, cm_entry_t c_page) {
-	// Code goes here
-}
