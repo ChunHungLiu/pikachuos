@@ -466,6 +466,6 @@ optfile net	test/nettest.c
 
 optofffile dumbvm syscall/sbrk.c
 optofffile dumbvm vm/vm.c
-optofffile dumbvm vm/paging.c
+optofffile dumbvm vm/pagetable.c
 optofffile dumbvm vm/coremap.c
 optofffile dumbvm vm/tlb.c

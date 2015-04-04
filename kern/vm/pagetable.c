@@ -6,7 +6,7 @@
 #include <current.h>
 #include <vm.h>
 #include <copyinout.h>
-#include <paging.h>
+#include <pagetable.h>
 
 #define PAGE_RANDOM
 

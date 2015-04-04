@@ -1,3 +1,5 @@
+#include <pagetable.h>
+
 // TODO: coremap interface goes here
 
 #ifndef _COREMAP_H_
@@ -26,12 +28,11 @@ struct cm_entry {
 	bool busy;
 	bool used_recently;
 	int pid;			// The process who owns this memory
+	struct addrspace *as;
 };
 
 struct vnode *back_store;
 struct bitmap *disk_map;
-
-struct cm_entry* get_cm_entry(uint index);
 
 int find_free_page(void);
 
@@ -39,15 +40,18 @@ void cm_bootstrap(void);
 
 /* Evict the "next" page from memory. This will be dependent on the eviction policy that we choose (clock, random, etc.). This is where we will switch out different eviction policies */
 // Consider returning the page we evicted
-void page_evict_any();
+int cm_choose_evict_page(void);
 
 /* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
-void page_evict(struct pt_entry* page);
+void cm_evict_page(void);
 
 /* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
-void page_load(struct pt_entry* page);
+paddr_t cm_alloc_page(vaddr_t va);
+
+paddr_t cm_load_page(void);
+
+int cm_get_free_page(void);
 
 /* Load page from the backing store into a specific page of physical memory (used as a helper function for page_load) */
-void page_load_into(struct pt_entry* page, struct cm_entry c_page);
 
 #endif
