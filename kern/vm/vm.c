@@ -88,8 +88,7 @@ void tlb_replacer(uint32_t tlbhi, uint32_t tlblo, int faulttype, vaddr_t faultad
 
 int vm_fault(int faulttype, vaddr_t faultaddress)
 {
-	pt_entry
-pt_entry *page;
+	struct pt_entry *page;
 	uint32_t tlbhi, tlblo;
 	switch (faulttype) {
 		case VM_FAULT_READ:

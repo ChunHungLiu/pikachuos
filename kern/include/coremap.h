@@ -18,7 +18,7 @@
 #define CM_SET_BUSY(CE)		((CE).busy = true)
 #define CM_UNSET_BUSY(CE)	((CE).busy = false)
 
-typedef struct {
+struct cm_entry {
 	vaddr_t vm_addr;		// The vm translation of the physical address. Only upper 20 bits get used
 	bool is_kernel;		// Note if this is a kernel page or not
 	bool allocated;		// Note if the physical address is allocated or not
@@ -26,12 +26,12 @@ typedef struct {
 	bool busy;
 	bool used_recently;
 	int pid;			// The process who owns this memory
-} cm_entry_t;
+};
 
 struct vnode *back_store;
 struct bitmap *disk_map;
 
-cm_entry_t* get_cm_entry(uint index);
+struct cm_entry* get_cm_entry(uint index);
 
 int find_free_page(void);
 
@@ -42,12 +42,12 @@ void cm_bootstrap(void);
 void page_evict_any();
 
 /* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
-void page_evict(pt_entry_t* page);
+void page_evict(struct pt_entry* page);
 
 /* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
-void page_load(pt_entry_t* page);
+void page_load(struct pt_entry* page);
 
 /* Load page from the backing store into a specific page of physical memory (used as a helper function for page_load) */
-void page_load_into(pt_entry_t* page, cm_entry_t c_page);
+void page_load_into(struct pt_entry* page, struct cm_entry c_page);
 
 #endif

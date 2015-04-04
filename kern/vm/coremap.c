@@ -22,10 +22,10 @@ static int cm_base;
 
 /* Wrapper to synchronize access to coremap entries. If it is currently busy, 
  * returns NULL. Should be matched with a CM_UNSET_BUSY once done. */
-cm_entry_t* get_cm_entry(uint index) {
+struct cm_entry* get_cm_entry(uint index) {
     // KASSERT(index <= coremap.size);
     spinlock_acquire(busy_lock);
-    cm_entry_t cm_entry = coremap[index];
+    struct cm_entry cm_entry = coremap[index];
     if (CM_IS_BUSY(cm_entry)) {
         return NULL;
     }
@@ -86,13 +86,13 @@ static uint evict_index = 0;
 void page_evict_any() {
     //KASSERT(lock_do_i_hold(coremap_lock)); // Should not be true
     while (true) {
-        cm_entry_t *cm_entry = get_cm_entry(evict_index);
+        struct cm_entry *cm_entry = get_cm_entry(evict_index);
         if (cm_entry.used_recently) {
             cm_entry.used_recently = false;
             CM_UNSET_BUSY(cm_entry);
             continue
         } else {
-            pt_entry_t *pt_entry = get
+            struct pt_entry *pt_entry = get
             page_evict(pt_entry of cm_entry)
             return;// cm_entry;
         }
@@ -101,16 +101,16 @@ void page_evict_any() {
 #endif
 
 /* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
-void page_evict(pt_entry_t* page) {
+void page_evict(struct pt_entry* page) {
     // Code goes here
 }
 
 /* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
-void page_load(pt_entry_t* page) {
+void page_load(struct pt_entry* page) {
     // Code goes here
 }
 
 /* Load page from the backing store into a specific page of physical memory (used as a helper function for page_load) */
-void page_load_into(pt_entry_t* page, cm_entry_t c_page) {
+void page_load_into(struct pt_entry* page, struct cm_entry c_page) {
     // Code goes here
 }
