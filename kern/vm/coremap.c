@@ -6,9 +6,12 @@
 #include <proc.h>
 #include <current.h>
 #include <mips/tlb.h>
-#include <addrspace.h>
 #include <vm.h>
 #include <coremap.h>
+#include <bitmap.h>
+#include <uio.h>
+#include <vnode.h>
+#include <vfs.h>
 
 #define CM_TO_PADDR(i) ((paddr_t)PAGE_SIZE * (i + cm_base))
 #define PADDR_TO_CM(paddr)  ((paddr / PAGE_SIZE) - cm_base)
@@ -22,6 +25,10 @@ static int cm_base;
 static int cm_used;
 
 static int evict_hand = 0;
+
+struct vnode *bs_file;
+struct bitmap *bs_map;
+struct lock *bs_map_lock;
 
 void cm_bootstrap(void) {
 	int i;
@@ -68,13 +75,19 @@ void cm_bootstrap(void) {
 }
 
 /* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
-paddr_t cm_load_page(addrspaces *as, vaddr_t va) {
+paddr_t cm_load_page(struct addrspace *as, vaddr_t va) {
     // Code goes here
     // Basically do cm_alloc_page and then load
+    // TODO: bs_read_in should happen here
+    (void) as;
+    (void) va;
     return 0;
 }
 
-paddr_t cm_alloc_page(addrspaces *as, vaddr_t va) {
+paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
+    (void) as;
+    (void) va;
+    // TODO: design choice here, everything needs to be passed down
     int cm_index;
     // Try to find a free page. If we have one, it's easy. We probably
     // want to keep a global cm_free veriable to boost performance
@@ -87,6 +100,7 @@ paddr_t cm_alloc_page(addrspaces *as, vaddr_t va) {
     }
     // cm_index should be a valid page index at this point
     KASSERT(coremap[cm_index].busy);
+    KASSERT(coremap[cm_index].allocated = 0);
     coremap[cm_index].allocated = 1;
 
     // If not kernel, update as and vaddr_base
@@ -96,17 +110,16 @@ paddr_t cm_alloc_page(addrspaces *as, vaddr_t va) {
     coremap[cm_index].as = curproc->p_addrspace;
     coremap[cm_index].pid = curproc->pid;
     coremap[cm_index].is_kernel = (curproc == kproc);
-    coremap[cm_index].allocated = 1;
     return CM_TO_PADDR(cm_index);
 }
 
 // Returns a index where a page is free
 int cm_get_free_page(void) {
-    KASSERT(cm_entries <= cm_used)
+    int i;
+    KASSERT(cm_entries <= cm_used);
     if (cm_entries == cm_used) {
         return -1;
     }
-    int i;
     // Do we want to use busy_lock here?
     for (i = 0; i < cm_entries; i++){
         spinlock_acquire(&busy_lock);
@@ -127,6 +140,7 @@ int cm_get_free_page(void) {
 void cm_evict_page(){
     // Use our eviction policy to choose a page to evict
     // coremap[cm_index] should be busy when this returns
+    // TODO: There's no synchronization at all. 
     int cm_index;
 
     cm_index = cm_choose_evict_page();
@@ -135,7 +149,7 @@ void cm_evict_page(){
     vm_tlbshootdown_all();
 
     // Write to backing storage no matter what
-    // swapout(COREMAP_TO_PADDR(cm_index));
+    bs_write_out(cm_index);
 
     // Need to find the pt entry and mark it as not in memory anymore
     struct pt_entry *pte = pt_get_entry(coremap[cm_index].as,coremap[cm_index].vm_addr<<12);
@@ -191,18 +205,105 @@ int cm_choose_evict_page() {
 #endif
 
 static uint evict_index = 0;
-int page_evict_any() {
+int cm_choose_evict_page() {
     //KASSERT(lock_do_i_hold(coremap_lock)); // Should not be true
     while (true) {
         struct cm_entry *cm_entry = get_cm_entry(evict_index);
-        if (cm_entry.used_recently) {
-            cm_entry.used_recently = false;
+        if (cm_entry->used_recently) {
+            cm_entry->used_recently = false;
             CM_UNSET_BUSY(cm_entry);
-            continue
+            continue;
         } else {
-            struct pt_entry *pt_entry = get
-            page_evict(pt_entry of cm_entry)
-            return;// cm_entry;
-        }
+            return -1 ;// cm_entry;
+        
     }
+}
+
+
+
+
+// Code for backing storage, could be moved to somewhere else.
+
+void bs_bootstrap() {
+    // open file, bitmap and lock
+    char *path = kstrdup("lhd0raw:");
+    if (path == NULL)
+        panic("bs_bootstrap: couldn't open disk");
+
+    int err = vfs_open(path, O_RDWR, 0, &bs_file);
+    if (err)
+        panic("bs_bootstrap: couldn't open disk");
+
+    bs_map = bitmap_create(1000);
+    if (disk_map == NULL)
+        panic("bs_bootstrap: couldn't create disk map");
+
+    bs_map_lock = lock_create("disk map lock");
+    if (bs_map_lock == NULL)
+        panic("bs_bootstrap: couldn't create disk map lock");
+    return;
+}
+
+int bs_write_out(int cm_index) {
+    int err, offset;
+    paddr_t paddr = CM_TO_PADDR(cm_index);
+    struct iovec iov;
+    struct uio u;
+    struct pt_entry *pte = pt_get_entry(as, va);
+
+    // TODO: error checking
+    offset = pte->store_index;
+    uio_kinit(&iov, &u, (void *) PADDR_TO_KVADDR(paddr), PAGE_SIZE, 
+        offset * PAGE_SIZE, UIO_WRITE);
+    err = VOP_WRITE(bs_file, &u);
+
+    // TODO: This will relate to dirty page management
+
+    return err;
+}
+
+// Put stuff in dest.
+int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index) {
+    int err, offset;
+    paddr_t paddr = CM_TO_PADDR(cm_index);
+    struct iovec iov;
+    struct uio u;
+    struct pt_entry *pte = pt_get_entry(as, va);
+
+    // TODO: error checking
+    offset = pte->store_index;
+    uio_kinit(&iov, &u, (void *) PADDR_TO_KVADDR(paddr), PAGE_SIZE, 
+        offset * PAGE_SIZE, UIO_READ);
+    err = VOP_READ(bs_file, &u);
+
+    if (!err){
+        coremap[cm_index].vm_addr = va>>12;
+        coremap[cm_index].as = as;
+
+        pte->store_index = offset;
+        pte->in_memory = 1;
+        pte->p_addr = paddr>>12;
+    }
+
+    return err;
+}
+
+unsigned bs_alloc_index() {
+    unsigned index;
+
+    lock_acquire(bs_map_lock);
+    if (bitmap_alloc(bs_map, &index))
+        panic("no space on disk");
+    lock_release(bs_map_lock);
+    return index;
+}
+
+void bs_dealloc_index(unsigned index) {
+    lock_acquire(bs_map_lock);
+
+    KASSERT(bitmap_isset(bs_map, index));
+    bitmap_unmark(bs_map, index);
+
+    lock_release(bs_map_lock);
+    return;
 }

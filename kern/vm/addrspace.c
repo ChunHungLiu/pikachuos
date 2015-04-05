@@ -56,13 +56,13 @@ as_create(void)
 	 * Initialize as needed.
 	 */
 	as->pt_lock = lock_create("page table lock");
-	as->page_table = page_table_create();
+	as->pagetable = pagetable_create();
 	
 	// TODO: error checking and clean up here
 
-	as->regions = array_create();
-	as->q = (vaddr_t)0;
-	as->heap_end = (vaddr_t)0;
+	as->as_regions = array_create();
+	as->heap_start = 0;
+	as->heap_end = 0;
 
 	return as;
 }
@@ -143,15 +143,31 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	int err;
 	struct region *region;
 
+	// TODO: This is from dumbvm. How does this alignment work?
+	/* Align the region. First, the base... */
+	sz += vaddr & ~(vaddr_t)PAGE_FRAME;
+	vaddr &= PAGE_FRAME;
+
+	/* ...and now the length. */
+	sz = (sz + PAGE_SIZE - 1) & PAGE_FRAME;
+
+	// Find the last region and put the heap tight next to it
+	if (as->heap_start < vaddr + sz) {
+		as->heap_start = vaddr + sz;
+		as->heap_end = as->heap_start;
+	}
+
 	// TODO: Alighment and heap? How do we know sth is a heap?
 	// Record region (to be used in vm_fault)
 	region = kmalloc(sizeof(struct region));
 	if (region == NULL)
 		return ENOMEM;
+
 	region->base = vaddr;
-	region->sz = sz;
+	region->size = sz;
 	region->permission = readable + writeable + executable;
-	err = array_add(as->regions, region, NULL);
+	
+	err = array_add(as->as_regions, region, NULL);
 	if (err)
 		return err;
 
@@ -199,12 +215,13 @@ int
 as_check_region(struct addrspace *as, vaddr_t va)
 {
 	int i;
+	int permissions = 0;
 	struct region *region;
-	int len = array_num(as->regions);
+	int len = array_num(as->as_regions);
 
 	for (i = 0; i < len; i++){
-		region = array_get(as->regions, i);
-		if (va >= region->base && va < (region->base + r->size)){
+		region = array_get(as->as_regions, i);
+		if (va >= region->base && va < (region->base + region->size)){
 			return permissions;
 		}
 	}

@@ -26,20 +26,6 @@ extern paddr_t firstpaddr;
 void vm_bootstrap(void)
 {
 	cm_bootstrap();
-// 	// If this isn't 8, we're wasting space
-// 	KASSERT(sizeof(struct cm_entry) == 8);
-
-// 	// Calculate how many cm_entries we need and nicely steal it
-// 	// Slightly inefficient since firstpaddr might not be 0, but whatevs
-// 	uint32_t page_count = mainbus_ramsize() / PAGE_SIZE;
-// 	coremap = (struct cm_entry*) firstpaddr;
-// 	firstpaddr += page_count * sizeof(struct cm_entry);
-
-// 	(void) coremap;
-// 	(void) coremap_lock;
-
-// 	// Initialize the lock for the coremap
-// 	spinlock_init(&coremap_lock);
 }
 
 /* Allocate/free some kernel-space virtual pages */

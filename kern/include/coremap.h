@@ -1,4 +1,5 @@
 #include <pagetable.h>
+#include <addrspace.h>
 
 // TODO: coremap interface goes here
 
@@ -16,9 +17,9 @@
 //#define CM_SET_HAS_NEXT(CE, value)  ((CE).vm_addr = (CE).vm_addr & 0xFFFFFFFB | (value << 2))
 //#define CM_SET_VM_ADDR(CE, value)   ((CE).vm_addr = (CE).vm_addr & 0x00000FFF | (value << 12))
 
-#define CM_IS_BUSY(CE)		((CE).busy)
-#define CM_SET_BUSY(CE)		((CE).busy = true)
-#define CM_UNSET_BUSY(CE)	((CE).busy = false)
+#define CM_IS_BUSY(CE)		((CE)->busy)
+#define CM_SET_BUSY(CE)		((CE)->busy = true)
+#define CM_UNSET_BUSY(CE)	((CE)->busy = false)
 
 struct cm_entry {
 	vaddr_t vm_addr;		// The vm translation of the physical address. Only upper 20 bits get used
@@ -57,12 +58,16 @@ void cm_evict_page(void);
  * Load page from back store to memory. May call page_evict_any if there’s 
  * no more physical memory. See Paging for more details. 
  */
-paddr_t cm_alloc_page(vaddr_t va);
+paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va);
 
-paddr_t cm_load_page(addrspaces *as, vaddr_t va);
+/* Load page from the backing store into a specific page of physical memory (used as a helper function for page_load) */
+paddr_t cm_load_page(struct addrspace *as, vaddr_t va);
 
 int cm_get_free_page(void);
 
-/* Load page from the backing store into a specific page of physical memory (used as a helper function for page_load) */
-
+void bs_bootstrap(void);
+int bs_write_out(int cm_index);
+int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index);
+unsigned bs_alloc_index();
+void bs_dealloc_index(unsigned index);
 #endif
