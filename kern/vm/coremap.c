@@ -80,7 +80,7 @@ paddr_t cm_alloc_page(vaddr_t va) {
     }
     // cm_index should be a valid page index at this point
     KASSERT(coremap[cm_index].busy);
-    mark_allocated(cm_index);
+    coremap[cm_index].allocated = 1;
 
     // If not kernel, update as and vaddr_base
     // What do we do with kernel vs. user?
@@ -122,7 +122,7 @@ void cm_evict_page(){
     // swapout(COREMAP_TO_PADDR(cm_index));
 
     // Need to find the pt entry and mark it as not in memory anymore
-    struct pt_entry *pte = get_pt_entry(coremap[cm_index].as,coremap[cm_index].vm_addr<<12);
+    struct pt_entry *pte = pt_get_entry(coremap[cm_index].as,coremap[cm_index].vm_addr<<12);
     KASSERT(pte != NULL);
 
     pte->in_memory = 0;

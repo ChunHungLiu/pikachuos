@@ -13,28 +13,26 @@
 #include <vm.h>
 #include <spinlock.h>
 #include <mainbus.h>
+#include <coremap.h>
 
 static // ???
-pt_entry
-cm_entry* coremap;
+struct cm_entry* coremap;
 
 static
 struct spinlock coremap_lock;
 
+extern paddr_t firstpaddr;
 
 void vm_bootstrap(void)
 {
 	// If this isn't 8, we're wasting space
-	KASSERT(sizeof(pt_entry
-cm_entry) == 8);
+	KASSERT(sizeof(struct cm_entry) == 8);
 
 	// Calculate how many cm_entries we need and nicely steal it
 	// Slightly inefficient since firstpaddr might not be 0, but whatevs
 	uint32_t page_count = mainbus_ramsize() / PAGE_SIZE;
-	coremap = (pt_entry
-cm_entry*) firstpaddr;
-	firstpaddr += page_count * sizeof(pt_entry
-cm_entry);
+	coremap = (struct cm_entry*) firstpaddr;
+	firstpaddr += page_count * sizeof(struct cm_entry);
 
 	(void) coremap;
 	(void) coremap_lock;
@@ -70,58 +68,73 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 	panic("Get off your ass and start coding me!!!\n");
 }
 
-static pt_entry
-pt_entry* get_pt_entry(vaddr_t v_addr) {
-	(void) v_addr;
-	return NULL;
-}
-
-static
-void tlb_replacer(uint32_t tlbhi, uint32_t tlblo, int faulttype, vaddr_t faultaddress) {
-	tlb_random(tlbhi, tlblo);
-	(void)tlbhi;
-	(void)tlblo;
-	(void)faulttype;
-	(void)faultaddress;
-	return;
-}
-
 int vm_fault(int faulttype, vaddr_t faultaddress)
 {
-	struct pt_entry *page;
+	struct pt_entry *pt_entry;
 	uint32_t tlbhi, tlblo;
+	// TODO: implement regions
+	// struct as_region *region;
+
+	// // Address space checks
+	// region = as_get_region(faultaddress);
+
+
+	// // Check that the faulting address is in the address space
+	// if (region == NULL) {
+	// 	return EFAULT;
+	// }
+
+	// // Process lacks permissions for accessing this address
+	// if (faulttype == VM_FAULT_READ     && !region->readable ||	// Result of read
+	// 	faulttype == VM_FAULT_WRITE    && !region->writable ||	// Result of write
+	// 	faulttype == VM_FAULT_READONLY && !region->writable) {	// Result of write
+	// 	return EFAULT;
+	// }
+
+	// If we have reached this point, the process has access to the faulting address
+
+	pt_entry = pt_get_entry(curproc->p_addrspace, faultaddress);
+
+	// Check if the page containing the address has been allocated.
+	// If not, we will allocate the page and let the switch block handle tlb loading
+	if (!pt_entry || !pt_entry->allocated) {
+		pt_entry = pt_alloc_page(curproc->p_addrspace, faultaddress & PAGE_MASK);
+	}
+
+	lock_acquire(pt_entry->lk);
+
+	// The page has been allocated. Check if it is in physical memory.
+	if (pt_entry->p_addr == 0) {
+		KASSERT(pt_entry->store_index != 0);
+		cm_load_page(pt_entry, faultaddress & PAGE_MASK);
+	}
+
+	// All the above checks *should* mean it's safe to just load it in
+	tlbhi = faultaddress & PAGE_MASK;
+	tlblo = (pt_entry->p_addr & PAGE_MASK) | VALID;
+
 	switch (faulttype) {
 		case VM_FAULT_READ:
-			// This occurs when the page is not in the TLB
+			// This occurs when reading from a page not in the TLB
 		case VM_FAULT_WRITE:
-			// This occurs when the page is not in the TLB
-			// Get page
-			page = get_pt_entry(faultaddress);
-			// Permissions check should go here
-
-			// calculate what should go in the TLB
-			tlbhi = faultaddress & PAGE_MASK;
-			tlblo = (page->p_addr & PAGE_MASK) | VALID;
+			// This occurs when writing to a page not in the TLB
 			// Random replacement
-			tlb_replacer(tlbhi, tlblo, faulttype, faultaddress);
+			tlb_random(tlbhi, tlblo);
 			break;
 		case VM_FAULT_READONLY:
 			// This occurs when the user tries to write to a clean page
-			// Get page
-			page = get_pt_entry(faultaddress);
-			// Check permissions to see if write is allowed
 
 			// Set the pagetable entry to now be dirty
-			PT_SET_DIRTY(*page);
+			//cm_set_dirty(pt_entry->p_addr);
 
-			// calculate what should go in the TLB
-			tlbhi = faultaddress & PAGE_MASK;
-			tlblo = (page->p_addr & PAGE_MASK) | DIRTY | VALID;
+			tlblo |= WRITABLE;
 
 			// Replace the faulting entry with the writable one
 			int index = tlb_probe(faultaddress & PAGE_MASK, 0);
 			tlb_write(tlbhi, tlblo, index);
 	}
+
+	lock_release(pt_entry->lk);
 
 	return 0;
 }

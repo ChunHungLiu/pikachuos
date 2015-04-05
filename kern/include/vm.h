@@ -41,7 +41,7 @@
 /* Generally helpful stuff */
 #define PAGE_MASK	0xFFFFF000
 #define NO_CACHE	0x00000800
-#define DIRTY		0x00000400
+#define WRITABLE	0x00000400
 #define VALID		0x00000200
 #define GLOBAL		0x00000100
 
