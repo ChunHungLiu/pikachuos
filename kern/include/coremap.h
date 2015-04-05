@@ -27,6 +27,7 @@ struct cm_entry {
 	bool has_next;		// Indicating that we have a cross-page allocation. Only used for the kernel???
 	bool busy;
 	bool used_recently;
+	bool dirty;
 	int pid;			// The process who owns this memory
 	struct addrspace *as;
 };
@@ -38,14 +39,24 @@ int find_free_page(void);
 
 void cm_bootstrap(void);
 
-/* Evict the "next" page from memory. This will be dependent on the eviction policy that we choose (clock, random, etc.). This is where we will switch out different eviction policies */
+/* 
+ * Evict the "next" page from memory. This will be dependent on the eviction 
+ * policy that we choose (clock, random, etc.). This is where we will switch 
+ * out different eviction policies 
+ */
 // Consider returning the page we evicted
 int cm_choose_evict_page(void);
 
-/* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
+/* 
+ * Evict page from memory. This function will update coremap, write to 
+ * backstore and update the backing_index entry; 
+ */
 void cm_evict_page(void);
 
-/* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
+/*
+ * Load page from back store to memory. May call page_evict_any if there’s 
+ * no more physical memory. See Paging for more details. 
+ */
 paddr_t cm_alloc_page(vaddr_t va);
 
 paddr_t cm_load_page(void);

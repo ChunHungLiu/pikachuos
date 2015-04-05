@@ -25,20 +25,21 @@ extern paddr_t firstpaddr;
 
 void vm_bootstrap(void)
 {
-	// If this isn't 8, we're wasting space
-	KASSERT(sizeof(struct cm_entry) == 8);
+	cm_bootstrap();
+// 	// If this isn't 8, we're wasting space
+// 	KASSERT(sizeof(struct cm_entry) == 8);
 
-	// Calculate how many cm_entries we need and nicely steal it
-	// Slightly inefficient since firstpaddr might not be 0, but whatevs
-	uint32_t page_count = mainbus_ramsize() / PAGE_SIZE;
-	coremap = (struct cm_entry*) firstpaddr;
-	firstpaddr += page_count * sizeof(struct cm_entry);
+// 	// Calculate how many cm_entries we need and nicely steal it
+// 	// Slightly inefficient since firstpaddr might not be 0, but whatevs
+// 	uint32_t page_count = mainbus_ramsize() / PAGE_SIZE;
+// 	coremap = (struct cm_entry*) firstpaddr;
+// 	firstpaddr += page_count * sizeof(struct cm_entry);
 
-	(void) coremap;
-	(void) coremap_lock;
+// 	(void) coremap;
+// 	(void) coremap_lock;
 
-	// Initialize the lock for the coremap
-	spinlock_init(&coremap_lock);
+// 	// Initialize the lock for the coremap
+// 	spinlock_init(&coremap_lock);
 }
 
 /* Allocate/free some kernel-space virtual pages */
@@ -106,7 +107,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 	// The page has been allocated. Check if it is in physical memory.
 	if (pt_entry->p_addr == 0) {
 		KASSERT(pt_entry->store_index != 0);
-		cm_load_page(pt_entry, faultaddress & PAGE_MASK);
+		cm_load_page(curproc->p_addrspace, pt_entry, faultaddress & PAGE_MASK);
 	}
 
 	// All the above checks *should* mean it's safe to just load it in

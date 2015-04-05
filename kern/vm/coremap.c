@@ -9,16 +9,19 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <coremap.h>
-// TODO: coremap code goes here
 
-#define CM_TO_PADDR(i) (paddr_t)PAGE_SIZE * (i + cm_base)
-#define PADDR_TO_CM(paddr)  (paddr / PAGE_SIZE) - cm_base
+#define CM_TO_PADDR(i) ((paddr_t)PAGE_SIZE * (i + cm_base))
+#define PADDR_TO_CM(paddr)  ((paddr / PAGE_SIZE) - cm_base)
 
 static struct cm_entry *coremap;
 static struct spinlock busy_lock = SPINLOCK_INITIALIZER;
 
 static int cm_entries;
 static int cm_base;
+
+static int cm_used;
+
+static int evict_hand = 0;
 
 void cm_bootstrap(void) {
 	int i;
@@ -48,14 +51,18 @@ void cm_bootstrap(void) {
 
 	cm_entries = (mem_end - mem_start) / PAGE_SIZE;
 	cm_base = mem_start / PAGE_SIZE;
+    cm_used = 0;
 
+    // TODO: Can be replaced with memset
 	for (i=0; i<(int)cm_entries; i++) {
         coremap[i].vm_addr = 0;
         coremap[i].busy = 0;
-        coremap[i].pid = -1;
+        coremap[i].pid = 0; // Tianyu, 0 PID is invalid. Kernel PID is 1. See kern\include\proc.h
         coremap[i].is_kernel = 0;
         coremap[i].allocated = 0;
         coremap[i].has_next = 0;
+        coremap[i].dirty = 0;
+        coremap[i].used_recently = 0;
         coremap[i].as = NULL;    
     }
 }
@@ -83,15 +90,22 @@ paddr_t cm_alloc_page(vaddr_t va) {
     coremap[cm_index].allocated = 1;
 
     // If not kernel, update as and vaddr_base
-    // What do we do with kernel vs. user?
+    // What do we do with kernel vs. user? -- Should be taken care of
     KASSERT(va != 0);
+    coremap[cm_index].vm_addr = va;
     coremap[cm_index].as = curproc->p_addrspace;
-    coremap[cm_index].vm_addr = va >> 12;
+    coremap[cm_index].pid = curproc->pid;
+    coremap[cm_index].is_kernel = (curproc == kproc);
+    coremap[cm_index].allocated = 1;
     return CM_TO_PADDR(cm_index);
 }
 
 // Returns a index where a page is free
 int cm_get_free_page(void) {
+    KASSERT(cm_entries <= cm_used)
+    if (cm_entries == cm_used) {
+        return -1;
+    }
     int i;
     // Do we want to use busy_lock here?
     for (i = 0; i < cm_entries; i++){
@@ -102,7 +116,9 @@ int cm_get_free_page(void) {
         }
         spinlock_release(&busy_lock);
     }
-    return -1;
+
+    // Either cm_used = cm_entries, or there was a free space
+    KASSERT(false);
 }
 
 /* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
@@ -153,6 +169,26 @@ int cm_choose_evict_page() {
     }
 }
 #elif PAGE_CLOCK
+int cm_choose_evict_page() {
+    struct cm_entry *cm_entry;
+    while (true) {
+        cm_entry = coremap[i];
+        spinlock_acquire(&busy_lock);
+        if (cm_entry.busy || cm_entry.is_kernel || cm_entry.used_recently){
+            spinlock_release(&busy_lock);
+            if (cm_entry.used_recently) {
+                cm_entry.used_recently = false;
+            }
+            evict_hand = (evict_hand + 1) % cm_entries;
+            continue;
+        } else {
+            CM_SET_BUSY(cm_entry);
+            spinlock_release(&busy_lock);
+            return i;
+        }
+    }
+}
+#endif
 
 static uint evict_index = 0;
 int page_evict_any() {
@@ -170,4 +206,3 @@ int page_evict_any() {
         }
     }
 }
-#endif
