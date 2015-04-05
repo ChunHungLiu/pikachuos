@@ -55,6 +55,14 @@ as_create(void)
 	/*
 	 * Initialize as needed.
 	 */
+	as->pt_lock = lock_create("page table lock");
+	as->page_table = page_table_create();
+	
+	// TODO: error checking and clean up here
+
+	as->regions = array_create();
+	as->q = (vaddr_t)0;
+	as->heap_end = (vaddr_t)0;
 
 	return as;
 }
@@ -74,15 +82,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	/*
 	 * Write this.
 	 */
-
-	// TODO: We'll definietly want to rewrite this in VM pset
-	/*newas->as_vbase1 = old->as_vbase1;
-	newas->as_pbase1 = old->as_pbase1;
-	newas->as_npages1 = old->as_npages1;
-	newas->as_vbase2 = old->as_vbase2;
-	newas->as_pbase2 = old->as_pbase2;
-	newas->as_npages2 = old->as_npages2;
-	newas->as_stackpbase = old->asstackpbase;*/
 
 	*ret = newas;
 	return 0;
@@ -112,9 +111,8 @@ as_activate(void)
 		return;
 	}
 
-	/*
-	 * Write this.
-	 */
+	// Context switch happens, shootdown everything
+	vm_tlbshootdown_all();
 }
 
 void
@@ -141,17 +139,23 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		 int readable, int writeable, int executable)
 {
-	/*
-	 * Write this.
-	 */
 
-	(void)as;
-	(void)vaddr;
-	(void)sz;
-	(void)readable;
-	(void)writeable;
-	(void)executable;
-	return ENOSYS;
+	int err;
+	struct region *region;
+
+	// TODO: Alighment and heap? How do we know sth is a heap?
+	// Record region (to be used in vm_fault)
+	region = kmalloc(sizeof(struct region));
+	if (region == NULL)
+		return ENOMEM;
+	region->base = vaddr;
+	region->sz = sz;
+	region->permission = readable + writeable + executable;
+	err = array_add(as->regions, region, NULL);
+	if (err)
+		return err;
+
+	return 0;
 }
 
 int
@@ -191,3 +195,19 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	return 0;
 }
 
+int
+as_check_region(struct addrspace *as, vaddr_t va)
+{
+	int i;
+	struct region *region;
+	int len = array_num(as->regions);
+
+	for (i = 0; i < len; i++){
+		region = array_get(as->regions, i);
+		if (va >= region->base && va < (region->base + r->size)){
+			return permissions;
+		}
+	}
+	// Can't find the addr in region, this is a segfault
+	return -1;
+}

@@ -59,7 +59,7 @@ void cm_evict_page(void);
  */
 paddr_t cm_alloc_page(vaddr_t va);
 
-paddr_t cm_load_page(void);
+paddr_t cm_load_page(addrspaces *as, vaddr_t va);
 
 int cm_get_free_page(void);
 

@@ -49,6 +49,12 @@ struct vnode;
  * You write this.
  */
 
+struct region {
+    vaddr_t base;
+    size_t size;
+    int permission;
+};
+
 struct addrspace {
 #if OPT_DUMBVM
         vaddr_t as_vbase1;
@@ -59,7 +65,11 @@ struct addrspace {
         size_t as_npages2;
         paddr_t as_stackpbase;
 #else
+        struct lock *pt_lock;
         struct pt_entry** pagetable;
+        struct array *as_regions;
+        vaddr_t heap_start;
+        vaddr_t heap_end;
 #endif
 };
 

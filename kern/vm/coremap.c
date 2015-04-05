@@ -68,13 +68,13 @@ void cm_bootstrap(void) {
 }
 
 /* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
-paddr_t cm_load_page(void) {
+paddr_t cm_load_page(addrspaces *as, vaddr_t va) {
     // Code goes here
     // Basically do cm_alloc_page and then load
     return 0;
 }
 
-paddr_t cm_alloc_page(vaddr_t va) {
+paddr_t cm_alloc_page(addrspaces *as, vaddr_t va) {
     int cm_index;
     // Try to find a free page. If we have one, it's easy. We probably
     // want to keep a global cm_free veriable to boost performance
