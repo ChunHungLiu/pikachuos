@@ -56,6 +56,8 @@ void cm_bootstrap(void) {
 	cm_size = ROUNDUP(cm_size, PAGE_SIZE);
 	KASSERT((cm_size & PAGE_FRAME) == cm_size);
 
+    coremap = (struct cm_entry *) PADDR_TO_KVADDR(mem_start);
+
 	// this is kinda strange, we may end up having unused cormap space.
 	ram_stealmem(cm_size / PAGE_SIZE);
     mem_start += cm_size / PAGE_SIZE;
@@ -103,24 +105,23 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
         cm_evict_page();
     }
     // cm_index should be a valid page index at this point
-    KASSERT(coremap[cm_index].busy);
-    KASSERT(coremap[cm_index].allocated = 0);
+    KASSERT(coremap[cm_index].busy == true);
+    KASSERT(coremap[cm_index].allocated == 0);
     coremap[cm_index].allocated = 1;
 
     // If not kernel, update as and vaddr_base
     // What do we do with kernel vs. user? -- Should be taken care of
-    KASSERT(va != 0);
+    // KASSERT(va != 0);
     coremap[cm_index].vm_addr = va;
     coremap[cm_index].as = as;
-    coremap[cm_index].pid = curproc->pid;   // Should not be using this. Consider receiving struct proc instead of struct addrsoace
-    coremap[cm_index].is_kernel = (curproc == kproc);
+    coremap[cm_index].is_kernel = (as == NULL);
     return CM_TO_PADDR(cm_index);
 }
 
 // Returns a index where a page is free
 int cm_get_free_page(void) {
     int i;
-    KASSERT(cm_entries <= cm_used);
+    KASSERT(cm_entries >= cm_used);
     if (cm_entries == cm_used) {
         return -1;
     }
@@ -128,6 +129,7 @@ int cm_get_free_page(void) {
     for (i = 0; i < cm_entries; i++){
         spinlock_acquire(&busy_lock);
         if (!coremap[i].allocated) {
+            coremap[i].busy = true;
             spinlock_release(&busy_lock);
             return i;
         }
