@@ -15,13 +15,13 @@
 #include <mainbus.h>
 #include <coremap.h>
 
-static // ???
-struct cm_entry* coremap;
-
-static
-struct spinlock coremap_lock;
-
-extern paddr_t firstpaddr;
+// static // ???
+// struct cm_entry* coremap;
+// 
+// static
+// struct spinlock coremap_lock;
+// 
+// extern paddr_t firstpaddr;
 
 void vm_bootstrap(void)
 {
@@ -93,7 +93,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 	// The page has been allocated. Check if it is in physical memory.
 	if (pt_entry->p_addr == 0) {
 		KASSERT(pt_entry->store_index != 0);
-		cm_load_page(curproc->p_addrspace, pt_entry, faultaddress & PAGE_MASK);
+		cm_load_page(curproc->p_addrspace, faultaddress & PAGE_MASK);
 	}
 
 	// All the above checks *should* mean it's safe to just load it in
@@ -112,7 +112,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 			// This occurs when the user tries to write to a clean page
 
 			// Set the pagetable entry to now be dirty
-			//cm_set_dirty(pt_entry->p_addr);
+			cm_set_dirty(pt_entry->p_addr);
 
 			tlblo |= WRITABLE;
 

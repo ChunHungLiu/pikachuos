@@ -12,6 +12,7 @@
 #include <uio.h>
 #include <vnode.h>
 #include <vfs.h>
+#include <kern/fcntl.h>
 
 #define CM_TO_PADDR(i) ((paddr_t)PAGE_SIZE * (i + cm_base))
 #define PADDR_TO_CM(paddr)  ((paddr / PAGE_SIZE) - cm_base)
@@ -35,6 +36,7 @@ void cm_bootstrap(void) {
     paddr_t mem_start, mem_end;
     uint32_t npages, cm_size;
     (void) &busy_lock;
+    (void) evict_hand;
 
     // get size of memory
     mem_end = ram_getsize();
@@ -107,8 +109,8 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     // What do we do with kernel vs. user? -- Should be taken care of
     KASSERT(va != 0);
     coremap[cm_index].vm_addr = va;
-    coremap[cm_index].as = curproc->p_addrspace;
-    coremap[cm_index].pid = curproc->pid;
+    coremap[cm_index].as = as;
+    coremap[cm_index].pid = curproc->pid;   // Should not be using this. Consider receiving struct proc instead of struct addrsoace
     coremap[cm_index].is_kernel = (curproc == kproc);
     return CM_TO_PADDR(cm_index);
 }
@@ -148,8 +150,11 @@ void cm_evict_page(){
     // Shoot down other CPUs
     vm_tlbshootdown_all();
 
-    // Write to backing storage no matter what
-    bs_write_out(cm_index);
+    // Write to backing storage no matter what -- Not anymore! We now have dirty bits!
+    KASSERT(coremap[cm_index].busy);
+    if (coremap[cm_index].dirty) {
+        bs_write_out(cm_index);
+    }
 
     // Need to find the pt entry and mark it as not in memory anymore
     struct pt_entry *pte = pt_get_entry(coremap[cm_index].as,coremap[cm_index].vm_addr<<12);
@@ -163,7 +168,6 @@ void cm_evict_page(){
 /* Evict the "next" page from memory. This will be dependent on the 
 eviction policy that we choose (clock, random, etc.). This is 
 where we will switch out different eviction policies */
-// Consider returning the page we evicted
 #ifdef PAGE_LINEAR
 int cm_choose_evict_page() {
     int i = 0;
@@ -204,22 +208,12 @@ int cm_choose_evict_page() {
 }
 #endif
 
-static uint evict_index = 0;
-int cm_choose_evict_page() {
-    //KASSERT(lock_do_i_hold(coremap_lock)); // Should not be true
-    while (true) {
-        struct cm_entry *cm_entry = get_cm_entry(evict_index);
-        if (cm_entry->used_recently) {
-            cm_entry->used_recently = false;
-            CM_UNSET_BUSY(cm_entry);
-            continue;
-        } else {
-            return -1 ;// cm_entry;
-        
-    }
+/* Blocks until a coremap entry can be set as dirty */
+void cm_set_dirty(paddr_t paddr) {
+    (void) paddr;
+    // Busy wait until the coremap entry becomes available
+    //while (paddr)
 }
-
-
 
 
 // Code for backing storage, could be moved to somewhere else.

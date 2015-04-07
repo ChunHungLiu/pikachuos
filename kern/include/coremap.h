@@ -63,11 +63,14 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va);
 /* Load page from the backing store into a specific page of physical memory (used as a helper function for page_load) */
 paddr_t cm_load_page(struct addrspace *as, vaddr_t va);
 
+/* Blocks until a coremap entry can be set as dirty */
+void cm_set_dirty(paddr_t paddr);
+
 int cm_get_free_page(void);
 
 void bs_bootstrap(void);
 int bs_write_out(int cm_index);
 int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index);
-unsigned bs_alloc_index();
+unsigned bs_alloc_index(void);
 void bs_dealloc_index(unsigned index);
 #endif
