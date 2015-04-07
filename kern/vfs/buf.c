@@ -238,6 +238,11 @@ static struct cv *buffer_reserve_cv;
 /* Macro for applying a NUM/DENOM pair. */
 #define SCALE(x, K) (((x) * K##_NUM) / K##_DENOM)
 
+/*
+ * Forward declaration (XXX: reorg to make this go away)
+ */
+static void buffer_release_internal(struct buf *b);
+
 ////////////////////////////////////////////////////////////
 // state invariants
 
@@ -1304,7 +1309,7 @@ buffer_read_internal(struct fs *fs, daddr_t block, size_t size, bool fsmanaged,
 		/* may lose (and then re-acquire) lock here */
 		result = buffer_readin(*ret);
 		if (result) {
-			buffer_release(*ret);
+			buffer_release_internal(*ret);
 			*ret = NULL;
 			return result;
 		}
@@ -1374,6 +1379,63 @@ buffer_read_fsmanaged(struct fs *fs, daddr_t block, size_t size,
 	result = buffer_read_internal(fs, block, size, true/*fsmanaged*/, ret);
 	lock_release(buffer_lock);
 
+	return result;
+}
+
+/*
+ * Shortcut combination of buffer_get and buffer_writeout that writes
+ * out any existing buffer if it's dirty and otherwise does nothing.
+ *
+ * This is one of the tools FSes can use to manage fsmanaged buffers,
+ * so we explicitly use buffer_writeout and not buffer_sync, as
+ * buffer_sync ignores fsmanaged buffers.
+ */
+int
+buffer_flush(struct fs *fs, daddr_t block, size_t size)
+{
+	struct buf *b;
+	int result = 0;
+
+	lock_acquire(buffer_lock);
+	bufcheck();
+
+	KASSERT(size == ONE_TRUE_BUFFER_SIZE);
+
+	b = buffer_find(fs, block);
+	if (b == NULL) {
+		goto done;
+	}
+	KASSERT(b->b_valid);
+
+	if (!b->b_dirty) {
+		/* Not dirty; don't need to do anything. */
+		goto done;
+	}
+
+	result = buffer_mark_busy(b);
+	if (result) {
+		KASSERT(result == EDEADBUF);
+		/* Buffer disappeared; no longer need to write it */
+		result = 0;
+		goto done;
+	}
+
+	if (!b->b_dirty) {
+		/* Someone else wrote it out. */
+		buffer_unmark_busy(b);
+		goto done;
+	}
+
+	/* crosscheck that we got what we asked for */
+	KASSERT(b->b_fs == fs && b->b_physblock == block);
+
+	result = buffer_writeout_internal(b);
+	/* as per the call in buffer_sync */
+	KASSERT(result != EDEADBUF);
+
+	buffer_unmark_busy(b);
+done:
+	lock_release(buffer_lock);
 	return result;
 }
 

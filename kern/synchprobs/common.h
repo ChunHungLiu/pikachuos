@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2002, 2009
+ * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
  *	The President and Fellows of Harvard College.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,79 +27,13 @@
  * SUCH DAMAGE.
  */
 
-/*
- * Driver code for whale mating problem
- */
-#include <types.h>
-#include <lib.h>
-#include <thread.h>
-#include <test.h>
+#ifndef COMMON_H
+#define COMMON_H
 
-#define NMATING 10
+void thread_fork_or_panic(const char *name, struct proc *proc,
+                          void (*func)(void *, unsigned long),
+                          void *data1, unsigned long data2);
 
-static
-void
-male(void *p, unsigned long which)
-{
-	(void)p;
-	kprintf("male whale #%ld starting\n", which);
+void shuffle(unsigned *array, unsigned len);
 
-	// Implement this function
-}
-
-static
-void
-female(void *p, unsigned long which)
-{
-	(void)p;
-	kprintf("female whale #%ld starting\n", which);
-
-	// Implement this function
-}
-
-static
-void
-matchmaker(void *p, unsigned long which)
-{
-	(void)p;
-	kprintf("matchmaker whale #%ld starting\n", which);
-
-	// Implement this function
-}
-
-
-// Change this function as necessary
-int
-whalemating(int nargs, char **args)
-{
-
-	int i, j, err=0;
-
-	(void)nargs;
-	(void)args;
-
-	for (i = 0; i < 3; i++) {
-		for (j = 0; j < NMATING; j++) {
-			switch(i) {
-			    case 0:
-				err = thread_fork("Male Whale Thread",
-						  NULL, male, NULL, j);
-				break;
-			    case 1:
-				err = thread_fork("Female Whale Thread",
-						  NULL, female, NULL, j);
-				break;
-			    case 2:
-				err = thread_fork("Matchmaker Whale Thread",
-						  NULL, matchmaker, NULL, j);
-				break;
-			}
-			if (err) {
-				panic("whalemating: thread_fork failed: %s)\n",
-				      strerror(err));
-			}
-		}
-	}
-
-	return 0;
-}
+#endif /* COMMON_H */
