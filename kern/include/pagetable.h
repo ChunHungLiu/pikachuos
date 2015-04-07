@@ -34,6 +34,10 @@ struct pt_entry** pagetable_create(void);
  */
 struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr);
 
+
+// Deallocate page
+void pt_dealloc_page(struct addrspace *as, vaddr_t v_addr);
+
 /*
  * Returns the page table entry from the current process's page table with the
  * specified virtual address

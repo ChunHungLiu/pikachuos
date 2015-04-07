@@ -15,3 +15,23 @@
 
 
 // TODO: sbrk code goes here
+/*void *
+sys_sbrk(intptr_t amount) {
+	int i;
+	struct addrspace *as = curproc->p_addrspace;
+	if (amount <= 0) {
+		return(current_break);
+	}
+
+	if (heap > max_heap || heap overlaps stack) {
+		return(-1);
+	}
+
+	for (i = 0; i < as->num_regions; i++) {
+		if (as->region.start == heap_start) {
+			as_heap = region;
+		}
+	}
+	as_heap->amount += amount
+	return(as_heap->amount - amount)
+}*/

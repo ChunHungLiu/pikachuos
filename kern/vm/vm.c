@@ -8,6 +8,7 @@
 #include <proc.h>
 #include <current.h>
 #include <mips/tlb.h>
+#include <tlb.h>
 #include <mips/vm.h>
 #include <addrspace.h>
 #include <vm.h>
@@ -37,26 +38,41 @@ vaddr_t alloc_kpages(unsigned npages)
 	paddr_t pa = cm_alloc_page(NULL, 0);
 	if (pa == 0)
 		panic("Fuck everything is broken");
-	return PADDR_TO_KADDR(pa);
+	return PADDR_TO_KVADDR(pa);
 }
 
+// Free kernel pages
 void free_kpages(vaddr_t addr)
 {
-	/* nothing - leak the memory. */
+	// For debugging purposes. Try not to forget to delete this
+    memset((void*)addr, 0x47, 4096);
 
-	(void)addr;
+	paddr_t paddr = KVADDR_TO_PADDR(addr);
+	cm_dealloc_page(NULL, paddr);
 }
 
 void vm_tlbshootdown_all(void)
 {
-	panic("You lazy bum. Why haven't you written me?!\n");
+	int spl;
+	int i;
+
+	spl = splhigh();
+	for (i = 0; i < NUM_TLB; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+	splx(spl);
 }
 
 void
 vm_tlbshootdown(const struct tlbshootdown *ts)
 {
-	(void)ts;
-	panic("Get off your ass and start coding me!!!\n");
+	int spl;
+	int i;
+
+	spl = splhigh();
+	i = tlb_probe(ts->target, 0);
+	tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);	
+	splx(spl);
 }
 
 int vm_fault(int faulttype, vaddr_t faultaddress)

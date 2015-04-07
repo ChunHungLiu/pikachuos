@@ -40,6 +40,22 @@ struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
 	return entry;
 }
 
+void pt_dealloc_page(struct addrspace *as, vaddr_t v_addr) {
+	uint32_t index_hi = v_addr >> 22;
+	uint32_t index_lo = v_addr >> 12 & 0x000003FF;
+
+	// The L2 pagetable should exists
+	KASSERT(as->pagetable[index_hi] != NULL);
+
+	struct pt_entry *entry = &as->pagetable[index_hi][index_lo];
+
+	lock_acquire(entry->lk);
+
+	panic("WTF?! You haven't written this yet?! It's due in like n days!!!\n");
+
+	lock_release(entry->lk);
+}
+
 /*
  * Returns the page table entry from the current process's page table with the
  * specified virtual address

@@ -91,8 +91,6 @@ paddr_t cm_load_page(struct addrspace *as, vaddr_t va) {
 }
 
 paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
-    (void) as;
-    (void) va;
     // TODO: design choice here, everything needs to be passed down
     int cm_index;
     // Try to find a free page. If we have one, it's easy. We probably
@@ -116,6 +114,27 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     coremap[cm_index].as = as;
     coremap[cm_index].is_kernel = (as == NULL);
     return CM_TO_PADDR(cm_index);
+}
+
+void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
+    int cm_index;
+
+    cm_index = PADDR_TO_CM(paddr);
+
+    // Lock the coremap entry
+    spinlock_acquire(&busy_lock);
+    coremap[cm_index].busy = true;
+    spinlock_release(&busy_lock);
+
+    coremap[cm_index].allocated = false;
+
+    // The pagetable entry should be gone
+    if (as != NULL) {
+        struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
+        KASSERT(pt_entry == NULL);
+    }
+
+    //bitmap stuff goes here
 }
 
 // Returns a index where a page is free

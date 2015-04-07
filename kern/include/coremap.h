@@ -55,10 +55,15 @@ int cm_choose_evict_page(void);
 void cm_evict_page(void);
 
 /*
- * Load page from back store to memory. May call page_evict_any if there’s 
- * no more physical memory. See Paging for more details. 
+ * Allocate a page of memory, pointing back to the virtual address in the
+ * address space that references it
  */
 paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va);
+
+/* 
+ * Deallocates a page of memory specified by the physical address
+ */
+void cm_dealloc_page(struct addrspace *as, paddr_t paddr);
 
 /* Load page from the backing store into a specific page of physical memory (used as a helper function for page_load) */
 paddr_t cm_load_page(struct addrspace *as, vaddr_t va);
