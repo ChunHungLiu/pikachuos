@@ -210,9 +210,10 @@ int cm_choose_evict_page() {
 
 /* Blocks until a coremap entry can be set as dirty */
 void cm_set_dirty(paddr_t paddr) {
-    (void) paddr;
-    // Busy wait until the coremap entry becomes available
-    //while (paddr)
+    // Don't worry about synchronization until we combine the bits with the vm_addr
+    int cm_index = PADDR_TO_CM(paddr);
+    struct cm_entry_t *cm_entry = coremap[cm_index];
+    cm_entry->dirty = true;
 }
 
 

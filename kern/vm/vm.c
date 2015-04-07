@@ -93,12 +93,17 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 	// The page has been allocated. Check if it is in physical memory.
 	if (pt_entry->p_addr == 0) {
 		KASSERT(pt_entry->store_index != 0);
+		KASSERT(faulttype != VM_FAULT_READONLY);
 		cm_load_page(curproc->p_addrspace, faultaddress & PAGE_MASK);
 	}
 
 	// All the above checks *should* mean it's safe to just load it in
 	tlbhi = faultaddress & PAGE_MASK;
 	tlblo = (pt_entry->p_addr & PAGE_MASK) | VALID;
+
+	paddr_t paddr = pt_entry->p_addr;
+
+	lock_release(pt_entry->lk);
 
 	switch (faulttype) {
 		case VM_FAULT_READ:
@@ -112,7 +117,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 			// This occurs when the user tries to write to a clean page
 
 			// Set the pagetable entry to now be dirty
-			cm_set_dirty(pt_entry->p_addr);
+			cm_set_dirty(paddr);
 
 			tlblo |= WRITABLE;
 
@@ -121,7 +126,6 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 			tlb_write(tlbhi, tlblo, index);
 	}
 
-	lock_release(pt_entry->lk);
 
 	return 0;
 }
