@@ -31,7 +31,7 @@ struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
 	}
 
 	struct pt_entry *entry = &as->pagetable[index_hi][index_lo];
-	entry->p_addr = cm_alloc_page(v_addr);
+	entry->p_addr = cm_alloc_page(as, v_addr);
 	entry->store_index = 0;
 	entry->in_memory = true;
 	entry->allocated = true;

@@ -14,6 +14,8 @@
 #include <vfs.h>
 #include <kern/fcntl.h>
 
+#define PAGE_LINEAR
+
 #define CM_TO_PADDR(i) ((paddr_t)PAGE_SIZE * (i + cm_base))
 #define PADDR_TO_CM(paddr)  ((paddr / PAGE_SIZE) - cm_base)
 
@@ -171,7 +173,7 @@ where we will switch out different eviction policies */
 #ifdef PAGE_LINEAR
 int cm_choose_evict_page() {
     int i = 0;
-    struct cm_entry *cm_entry;
+    struct cm_entry cm_entry;
     while (true) {
         cm_entry = coremap[i];
         spinlock_acquire(&busy_lock);
@@ -188,7 +190,7 @@ int cm_choose_evict_page() {
 }
 #elif PAGE_CLOCK
 int cm_choose_evict_page() {
-    struct cm_entry *cm_entry;
+    struct cm_entry cm_entry;
     while (true) {
         cm_entry = coremap[i];
         spinlock_acquire(&busy_lock);
@@ -212,8 +214,7 @@ int cm_choose_evict_page() {
 void cm_set_dirty(paddr_t paddr) {
     // Don't worry about synchronization until we combine the bits with the vm_addr
     int cm_index = PADDR_TO_CM(paddr);
-    struct cm_entry_t cm_entry = coremap[cm_index];
-    cm_entry.dirty = true;
+    coremap[cm_index].dirty = true;
 }
 
 
@@ -244,6 +245,8 @@ int bs_write_out(int cm_index) {
     paddr_t paddr = CM_TO_PADDR(cm_index);
     struct iovec iov;
     struct uio u;
+    struct addrspace *as = coremap[cm_index].as;
+    vaddr_t va = coremap[cm_index].vm_addr;
     struct pt_entry *pte = pt_get_entry(as, va);
 
     // TODO: error checking

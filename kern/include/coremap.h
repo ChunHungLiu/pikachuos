@@ -17,9 +17,9 @@
 //#define CM_SET_HAS_NEXT(CE, value)  ((CE).vm_addr = (CE).vm_addr & 0xFFFFFFFB | (value << 2))
 //#define CM_SET_VM_ADDR(CE, value)   ((CE).vm_addr = (CE).vm_addr & 0x00000FFF | (value << 12))
 
-#define CM_IS_BUSY(CE)		((CE)->busy)
-#define CM_SET_BUSY(CE)		((CE)->busy = true)
-#define CM_UNSET_BUSY(CE)	((CE)->busy = false)
+#define CM_IS_BUSY(CE)		((CE).busy)
+#define CM_SET_BUSY(CE)		((CE).busy = true)
+#define CM_UNSET_BUSY(CE)	((CE).busy = false)
 
 struct cm_entry {
 	vaddr_t vm_addr;		// The vm translation of the physical address. Only upper 20 bits get used
