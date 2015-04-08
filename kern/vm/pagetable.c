@@ -69,6 +69,8 @@ struct pt_entry* pt_get_entry(struct addrspace *as, vaddr_t v_addr) {
 		return NULL;
 	}
 
+	
+
 	return &as->pagetable[index_hi][index_lo];
 }
 

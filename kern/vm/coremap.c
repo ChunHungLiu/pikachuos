@@ -195,12 +195,15 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         //    KASSERT(pt_entry == NULL);
         //}
 
-        // Set this to 'free' in the backing store
-        struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
-        lock_acquire(pt_entry->lk);
-        bs_index = pt_entry->store_index;
-        lock_release(pt_entry->lk);
-        bs_dealloc_index(bs_index)
+
+        // If this is not the kernel, set this to 'free' in the backing store
+        if (as != NULL) {
+            struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
+            lock_acquire(pt_entry->lk);
+            bs_index = pt_entry->store_index;
+            lock_release(pt_entry->lk);
+            bs_dealloc_index(bs_index)
+        }
 
         // Check if we should continue, unlock this entry
         has_next = coremap[cm_index].has_next;
