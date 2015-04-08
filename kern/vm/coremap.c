@@ -202,13 +202,13 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
             lock_acquire(pt_entry->lk);
             bs_index = pt_entry->store_index;
             lock_release(pt_entry->lk);
-            bs_dealloc_index(bs_index)
+            bs_dealloc_index(bs_index);
         }
 
         // Check if we should continue, unlock this entry
+        cm_index++;
         has_next = coremap[cm_index].has_next;
         coremap[cm_index].busy = false;
-        cm_index++;
     }
 }
 

@@ -90,11 +90,33 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 void
 as_destroy(struct addrspace *as)
 {
-	/*
-	 * Clean up as needed.
-	 */
+    /*
+     * Clean up as needed.
+     */
+    unsigned len, i;
+    pt_destroy(as, as->pagetable);
+    struct region *region_ptr;
 
-	kfree(as);
+    lock_destroy(as->pt_lock);
+    
+    len = array_num(as->as_regions);
+    // for (i = len - 1; i > 0; i--){
+    //  region_ptr = array_get(as->as_regions, i);
+    //  kfree(region_ptr);
+    //  array_remove(as->as_regions, i);
+    // }
+
+    i = len - 1;
+    while (len > 0){
+        region_ptr = array_get(as->as_regions, i);
+        kfree(region_ptr);
+        array_remove(as->as_regions, i);
+        if (i == 0)
+            break;
+        i--;
+    }
+    array_destroy(as->as_regions);
+    kfree(as);
 }
 
 void

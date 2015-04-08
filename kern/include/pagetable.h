@@ -43,5 +43,6 @@ void pt_dealloc_page(struct addrspace *as, vaddr_t v_addr);
  * specified virtual address
  */
 struct pt_entry* pt_get_entry(struct addrspace *as, vaddr_t v_addr);
+void pt_destroy(struct addrspace *as, struct pt_entry** pagetable);
 
 #endif

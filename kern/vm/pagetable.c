@@ -74,6 +74,32 @@ struct pt_entry* pt_get_entry(struct addrspace *as, vaddr_t v_addr) {
 	return &as->pagetable[index_hi][index_lo];
 }
 
+/* Destroy all entries in the page table. 
+ * This will free coremap as well
+ */
+void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
+    int i, j;
+    struct pt_entry entry;
+    for (i = 0; i < PT_LEVEL_SIZE; i ++) {
+        if (pagetable[i] != NULL) {
+            for (j = 0; j < PT_LEVEL_SIZE; j ++){
+                entry = pagetable[i][j];
+                if (entry.allocated) {
+                    if (entry.in_memory) {
+                        cm_dealloc_page(as, entry.p_addr);
+                    } 
+                    else {
+                        bs_dealloc_index(entry.store_index);
+                    }
+                    lock_destroy(entry.lk);
+                }
+            }
+        }
+        kfree(pagetable[i]);
+    }
+    kfree(pagetable);
+}
+
 /* 
  * Sets the page table entry for the page pointed to by 'vaddr' to the provided
  * page table entry
