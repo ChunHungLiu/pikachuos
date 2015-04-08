@@ -174,23 +174,39 @@ paddr_t cm_alloc_npages(unsigned npages) {
 
 void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
     int cm_index;
+    int bs_index;
+    bool has_next = true;
 
     cm_index = PADDR_TO_CM(paddr);
 
-    // Lock the coremap entry
-    spinlock_acquire(&busy_lock);
-    coremap[cm_index].busy = true;
-    spinlock_release(&busy_lock);
+    // Loop until all pages in a multipage chain are deallocated
+    while (has_next) {
 
-    coremap[cm_index].allocated = false;
+        // Lock the coremap entry
+        spinlock_acquire(&busy_lock);
+        coremap[cm_index].busy = true;
+        spinlock_release(&busy_lock);
 
-    // The pagetable entry should be gone
-    if (as != NULL) {
+        coremap[cm_index].allocated = false;
+
+        // The pagetable entry should be gone...nevermind, we need the backing store index
+        //if (as != NULL) {
+        //    struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
+        //    KASSERT(pt_entry == NULL);
+        //}
+
+        // Set this to 'free' in the backing store
         struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
-        KASSERT(pt_entry == NULL);
-    }
+        lock_acquire(pt_entry->lk);
+        bs_index = pt_entry->store_index;
+        lock_release(pt_entry->lk);
+        bs_dealloc_index(bs_index)
 
-    //bitmap stuff goes here
+        // Check if we should continue, unlock this entry
+        has_next = coremap[cm_index].has_next;
+        coremap[cm_index].busy = false;
+        cm_index++;
+    }
 }
 
 // Returns a index where a page is free

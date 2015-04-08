@@ -41,7 +41,7 @@ vaddr_t alloc_kpages(unsigned npages)
 // Free kernel pages
 void free_kpages(vaddr_t addr)
 {
-	// For debugging purposes. Try not to forget to delete this
+	// TEMP For debugging purposes. Try not to forget to delete this
     memset((void*)addr, 0x47, 4096);
 
 	paddr_t paddr = KVADDR_TO_PADDR(addr);
