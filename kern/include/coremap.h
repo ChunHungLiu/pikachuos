@@ -52,7 +52,7 @@ int cm_choose_evict_page(void);
  * Evict page from memory. This function will update coremap, write to 
  * backstore and update the backing_index entry; 
  */
-void cm_evict_page(void);
+int cm_evict_page(void);
 
 /*
  * Allocate a page of memory, pointing back to the virtual address in the

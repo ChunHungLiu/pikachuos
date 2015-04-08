@@ -103,7 +103,7 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     // We don't have any free page any more, needs to evict.
     if (cm_index < 0) {
         // Do page eviction
-        cm_evict_page();
+        cm_index = cm_evict_page();
     }
     // cm_index should be a valid page index at this point
     KASSERT(coremap[cm_index].busy == true);
@@ -116,6 +116,7 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     coremap[cm_index].vm_addr = va;
     coremap[cm_index].as = as;
     coremap[cm_index].is_kernel = (as == NULL);
+    coremap[cm_index].busy = false;
     return CM_TO_PADDR(cm_index);
 }
 
@@ -152,7 +153,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
                 if (end_index - start_index == npages - 1) {
                     // Take ownership of all the reserved ones
                     for (unsigned i = start_index; i <= end_index; i++) {
-                        coremap[i].vm_addr = CM_TO_PADDR(start_index);  // TODO TEMP: for debugging. Should get overridden anyway
+                        coremap[i].vm_addr = CM_TO_PADDR(i);  // TODO TEMP: for debugging. Should get overridden anyway
                         coremap[i].is_kernel = true;
                         coremap[i].allocated = true;
                         coremap[i].pid = 1;
@@ -237,7 +238,7 @@ int cm_get_free_page(void) {
 /* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
 // Need to sync 2 addrspaces
 // Simply update the pte related to paddr
-void cm_evict_page(){
+int cm_evict_page(){
     // Use our eviction policy to choose a page to evict
     // coremap[cm_index] should be busy when this returns
     // TODO: There's no synchronization at all. 
@@ -260,6 +261,8 @@ void cm_evict_page(){
 
     pte->in_memory = 0;
     coremap[cm_index].allocated = 0;
+
+    return cm_index
 }
 
 // NOT COMPLETE
