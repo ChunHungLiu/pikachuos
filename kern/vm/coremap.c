@@ -139,7 +139,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
             start_index++;
             continue;
         } else {
-            if (coremap[end_index].allocated && coremap[end_index].is_kernel) {
+            if (coremap[end_index].allocated) {
                 // We can't move this page. Have to start over
                 for (; start_index < end_index; start_index++)
                     coremap[start_index].busy = false;
@@ -262,7 +262,7 @@ int cm_evict_page(){
     pte->in_memory = 0;
     coremap[cm_index].allocated = 0;
 
-    return cm_index
+    return cm_index;
 }
 
 // NOT COMPLETE
