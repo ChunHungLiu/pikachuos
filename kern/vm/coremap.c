@@ -22,12 +22,12 @@
 static struct cm_entry *coremap;
 static struct spinlock busy_lock = SPINLOCK_INITIALIZER;
 
-static int cm_entries;
-static int cm_base;
+static unsigned cm_entries;
+static unsigned cm_base;
 
-static int cm_used;
+static unsigned cm_used;
 
-static int evict_hand = 0;
+static unsigned evict_hand = 0;
 
 struct vnode *bs_file;
 struct bitmap *bs_map;
@@ -60,7 +60,7 @@ void cm_bootstrap(void) {
 
 	// this is kinda strange, we may end up having unused cormap space.
 	ram_stealmem(cm_size / PAGE_SIZE);
-    mem_start += cm_size / PAGE_SIZE;
+    mem_start += cm_size;
 
 	cm_entries = (mem_end - mem_start) / PAGE_SIZE;
 	cm_base = mem_start / PAGE_SIZE;
@@ -70,7 +70,7 @@ void cm_bootstrap(void) {
 	for (i=0; i<(int)cm_entries; i++) {
         coremap[i].vm_addr = 0;
         coremap[i].busy = 0;
-        coremap[i].pid = 0; // Tianyu, 0 PID is invalid. Kernel PID is 1. See kern\include\proc.h
+        coremap[i].pid = 0; // Tianyu, we can use 0. 0 PID is invalid. Kernel PID is 1. See kern\include\proc.h
         coremap[i].is_kernel = 0;
         coremap[i].allocated = 0;
         coremap[i].has_next = 0;
@@ -78,6 +78,9 @@ void cm_bootstrap(void) {
         coremap[i].used_recently = 0;
         coremap[i].as = NULL;    
     }
+
+    // Set the coremap entries that reference themselves to be used
+
 }
 
 /* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
@@ -116,6 +119,59 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     return CM_TO_PADDR(cm_index);
 }
 
+/* Linear probing to find free contiguous pages. We reserve memory and try to
+ * grow it. If we encounter a kernel page (can't be moved), then we unreserve
+ * the previous pages we had and start over after it. */
+paddr_t cm_alloc_npages(unsigned npages) {
+    // This should be the kernel calling this. Can we check this
+    unsigned start_index = 0, end_index = 0;
+    for (end_index = 0; end_index < cm_entries; end_index++) {
+        spinlock_acquire(&busy_lock);
+        if (coremap[end_index].busy) {
+            // Entry busy. Give up and restart the contiguous region
+            // Set the pages we had reserved to not busy
+            for (; start_index < end_index; start_index++)
+                coremap[start_index].busy = false;
+            spinlock_release(&busy_lock);
+            KASSERT(start_index == end_index);
+            // start_index should point to the start of a potentially free region
+            start_index++;
+            continue;
+        } else {
+            if (coremap[end_index].allocated && coremap[end_index].is_kernel) {
+                // We can't move this page. Have to start over
+                for (; start_index < end_index; start_index++)
+                    coremap[start_index].busy = false;
+                KASSERT(start_index == end_index);
+                start_index++;
+            } else {
+                // This page is free!!! Reserve it
+                coremap[end_index].busy = true;
+                // Check if we are done
+                KASSERT(end_index - start_index < npages);
+                if (end_index - start_index == npages - 1) {
+                    // Take ownership of all the reserved ones
+                    for (unsigned i = start_index; i <= end_index; i++) {
+                        coremap[i].vm_addr = CM_TO_PADDR(start_index);  // TODO TEMP: for debugging. Should get overridden anyway
+                        coremap[i].is_kernel = true;
+                        coremap[i].allocated = true;
+                        coremap[i].pid = 1;
+                        // Can't be set after we set busy to false
+                        if (i < end_index)
+                            coremap[i].has_next = true;
+                        coremap[i].busy = false;
+                    }
+                    spinlock_release(&busy_lock);
+                    return CM_TO_PADDR(start_index);
+                }
+            }
+            spinlock_release(&busy_lock);   
+        }
+        //KASSERT(!spinlock_do_i_hold(&busy_lock)); // Seems to be hanging on this
+    }
+    return 0;
+}
+
 void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
     int cm_index;
 
@@ -139,7 +195,7 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
 
 // Returns a index where a page is free
 int cm_get_free_page(void) {
-    int i;
+    unsigned i;
     KASSERT(cm_entries >= cm_used);
     if (cm_entries == cm_used) {
         return -1;

@@ -32,10 +32,7 @@ void vm_bootstrap(void)
 /* Allocate/free some kernel-space virtual pages */
 vaddr_t alloc_kpages(unsigned npages)
 {
-	(void) npages;
-	if (npages > 1)
-		panic("alloc_kpages: don't support multi-page alloc");
-	paddr_t pa = cm_alloc_page(NULL, 0);
+	paddr_t pa = cm_alloc_npages(npages);
 	if (pa == 0)
 		panic("Fuck everything is broken");
 	return PADDR_TO_KVADDR(pa);

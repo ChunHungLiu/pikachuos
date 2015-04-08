@@ -60,6 +60,9 @@ void cm_evict_page(void);
  */
 paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va);
 
+/* Find a contiguous npages of memory */
+paddr_t cm_alloc_npages(unsigned npages);
+
 /* 
  * Deallocates a page of memory specified by the physical address
  */
