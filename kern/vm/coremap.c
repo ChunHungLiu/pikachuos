@@ -175,7 +175,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
 
 void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
     int cm_index;
-    int bs_index;
+    // int bs_index;
     bool has_next = true;
 
     cm_index = PADDR_TO_CM(paddr);
@@ -198,12 +198,13 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
 
 
         // If this is not the kernel, set this to 'free' in the backing store
+        // TODO: where should we unset bitmap??
         if (as != NULL) {
             struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
             lock_acquire(pt_entry->lk);
-            bs_index = pt_entry->store_index;
+            // bs_index = pt_entry->store_index;
             lock_release(pt_entry->lk);
-            bs_dealloc_index(bs_index);
+            // bs_dealloc_index(bs_index);
         }
 
         // Check if we should continue, unlock this entry
@@ -330,7 +331,7 @@ void bs_bootstrap() {
         panic("bs_bootstrap: couldn't open disk");
 
     bs_map = bitmap_create(1000);
-    if (disk_map == NULL)
+    if (bs_map == NULL)
         panic("bs_bootstrap: couldn't create disk map");
 
     bs_map_lock = lock_create("disk map lock");

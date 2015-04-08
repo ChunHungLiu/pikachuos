@@ -50,6 +50,7 @@
 #include <syscall.h>
 #include <test.h>
 #include <version.h>
+#include <coremap.h>
 #include "autoconf.h"  // for pseudoconfig
 
 
@@ -136,6 +137,7 @@ boot(void)
 	vfs_setbootfs("emu0");
 
 	kheap_nextgeneration();
+	bs_bootstrap();
 
 	/*
 	 * Make sure various things aren't screwed up.
