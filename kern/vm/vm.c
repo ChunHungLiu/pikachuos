@@ -41,6 +41,7 @@ vaddr_t alloc_kpages(unsigned npages)
 // Free kernel pages
 void free_kpages(vaddr_t addr)
 {
+	KASSERT(addr & 0x80000000);	// Check that this is actually a kernel page
 	// TEMP For debugging purposes. Try not to forget to delete this
     memset((void*)addr, 0x47, 4096);
 
@@ -76,6 +77,9 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 {
 	struct pt_entry *pt_entry;
 	uint32_t tlbhi, tlblo;
+
+	//KASSERT(faultaddress != 0);
+
 	// TODO: implement regions
 	// struct as_region *region;
 

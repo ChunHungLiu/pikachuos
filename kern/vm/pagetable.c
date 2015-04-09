@@ -22,7 +22,6 @@ struct pt_entry** pagetable_create() {
  */
 struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
 	uint32_t index_hi = v_addr >> 22;
-	uint32_t index_lo = v_addr >> 12 & 0x000003FF;
 
 	// Check that the L2 pagetable exists, creating if it doesn't
 	if (as->pagetable[index_hi] == NULL) {
@@ -30,7 +29,7 @@ struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
 		memset(as->pagetable[index_hi], 0, PT_LEVEL_SIZE * sizeof(struct pt_entry));
 	}
 
-	struct pt_entry *entry = &as->pagetable[index_hi][index_lo];
+	struct pt_entry *entry = pt_get_entry(as, v_addr);
 	entry->p_addr = cm_alloc_page(as, v_addr);
 	entry->store_index = 0;
 	entry->in_memory = true;
@@ -40,20 +39,22 @@ struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
 	return entry;
 }
 
+/* Removes a page from the pagetable */
 void pt_dealloc_page(struct addrspace *as, vaddr_t v_addr) {
-	uint32_t index_hi = v_addr >> 22;
-	uint32_t index_lo = v_addr >> 12 & 0x000003FF;
-
-	// The L2 pagetable should exists
-	KASSERT(as->pagetable[index_hi] != NULL);
-
-	struct pt_entry *entry = &as->pagetable[index_hi][index_lo];
+	struct pt_entry *entry = pt_get_entry(as, v_addr);
 
 	lock_acquire(entry->lk);
 
-	panic("WTF?! You haven't written this yet?! It's due in like n days!!!\n");
+	paddr_t p_addr = KVADDR_TO_PADDR(v_addr);
+	cm_dealloc_page(NULL, p_addr);
+
+	entry->p_addr = 0;
+	entry->store_index = 0;
+	entry->in_memory = 0;
+	entry->allocated = 0;
 
 	lock_release(entry->lk);
+	lock_destroy(entry->lk);
 }
 
 /*
@@ -78,6 +79,7 @@ struct pt_entry* pt_get_entry(struct addrspace *as, vaddr_t v_addr) {
  * This will free coremap as well
  */
 void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
+	kprintf("pt: pt_destroy (addrspace) %p\n", as);
     int i, j;
     struct pt_entry entry;
     for (i = 0; i < PT_LEVEL_SIZE; i ++) {
@@ -85,11 +87,14 @@ void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
             for (j = 0; j < PT_LEVEL_SIZE; j ++){
                 entry = pagetable[i][j];
                 if (entry.allocated) {
+                	kprintf("pt: dealloc {paddr: %x, store_index: %x, in_memory: %d, allocated: %d, lock: %p}\n",
+                		entry.p_addr, entry.store_index, entry.in_memory, entry.allocated, entry.lk);
                     if (entry.in_memory) {
-                        cm_dealloc_page(as, entry.p_addr);
+                        pt_dealloc_page(as, (i << 22) | (j << 12));
                     } 
                     else {
                         bs_dealloc_index(entry.store_index);
+                        pt_dealloc_page(as, (i << 22) | (j << 12));
                     }
                     lock_destroy(entry.lk);
                 }
@@ -98,6 +103,7 @@ void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
         kfree(pagetable[i]);
     }
     kfree(pagetable);
+    kprintf("pt: pt_destroy complete\n");
 }
 
 /* 

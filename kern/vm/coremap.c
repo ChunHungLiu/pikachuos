@@ -100,6 +100,7 @@ paddr_t cm_load_page(struct addrspace *as, vaddr_t va) {
  *  a NULL address space indicates that this is a kernel page
  */
 paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
+    KASSERT(va != 0);
     // TODO: design choice here, everything needs to be passed down
     int cm_index;
     // Try to find a free page. If we have one, it's easy. We probably
@@ -179,6 +180,10 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
     // int bs_index;
     bool has_next = true;
 
+    for (unsigned i = 0; i < 1024; i++) {
+        ((unsigned*)paddr)[i] = 0xDEA110C1;
+    }
+
     cm_index = PADDR_TO_CM(paddr);
 
     // Loop until all pages in a multipage chain are deallocated
@@ -189,23 +194,11 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         coremap[cm_index].busy = true;
         spinlock_release(&busy_lock);
 
-        CM_DEBUG("deallocating (cm_entry) %d from (addrspace) %p\n", cm_index, as);
-        coremap[cm_index].allocated     = 0;
-        coremap[cm_index].vm_addr       = 0;
-        coremap[cm_index].is_kernel     = 0;
-        coremap[cm_index].allocated     = 0;
-        coremap[cm_index].has_next      = 0;
-        coremap[cm_index].used_recently = 0;
-        coremap[cm_index].dirty         = 0;
-        coremap[cm_index].pid           = 0;
-        coremap[cm_index].addrspace     = 0;
-
-        // The pagetable entry should be gone...nevermind, we need the backing store index
-        //if (as != NULL) {
-        //    struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
-        //    KASSERT(pt_entry == NULL);
-        //}
-
+        // Check if we should continue, unlock this entry
+        has_next = coremap[cm_index].has_next;
+        if (has_next) {
+            CM_DEBUG("continuing to next contiguous page\n");
+        }
 
         // If this is not the kernel, set this to 'free' in the backing store
         // TODO: where should we unset bitmap??
@@ -217,11 +210,23 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
             // bs_dealloc_index(bs_index);
         }
 
-        // Check if we should continue, unlock this entry
-        has_next = coremap[cm_index].has_next;
-        if (has_next) {
-            CM_DEBUG("continuing to next contiguous page\n");
-        }
+        CM_DEBUG("deallocating (cm_entry) %d from (addrspace) %p\n", cm_index, as);
+        coremap[cm_index].allocated     = 0;
+        coremap[cm_index].vm_addr       = 0;
+        coremap[cm_index].is_kernel     = 0;
+        coremap[cm_index].allocated     = 0;
+        coremap[cm_index].has_next      = 0;
+        coremap[cm_index].used_recently = 0;
+        coremap[cm_index].dirty         = 0;
+        coremap[cm_index].pid           = 0;
+        coremap[cm_index].as            = 0;
+
+        // The pagetable entry should be gone...nevermind, we need the backing store index
+        //if (as != NULL) {
+        //    struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
+        //    KASSERT(pt_entry == NULL);
+        //}
+
         coremap[cm_index].busy = false;
         cm_index++;
     }
