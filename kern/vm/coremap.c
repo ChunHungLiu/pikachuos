@@ -93,6 +93,10 @@ paddr_t cm_load_page(struct addrspace *as, vaddr_t va) {
     return 0;
 }
 
+/* 
+ * Notes:
+ *  a NULL address space indicates that this is a kernel page
+ */
 paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     // TODO: design choice here, everything needs to be passed down
     int cm_index;
@@ -107,12 +111,13 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     }
     // cm_index should be a valid page index at this point
     KASSERT(coremap[cm_index].busy == true);
+    // If alread free, this should not be allocated. If evicted, should not be either
     KASSERT(coremap[cm_index].allocated == 0);
     coremap[cm_index].allocated = 1;
 
-    // If not kernel, update as and vaddr_base
-    // What do we do with kernel vs. user? -- Should be taken care of
     // KASSERT(va != 0);
+    // Are we supposed to track PID this way?
+    coremap[cm_index].pid = curproc->pid;
     coremap[cm_index].vm_addr = va;
     coremap[cm_index].as = as;
     coremap[cm_index].is_kernel = (as == NULL);
@@ -128,45 +133,37 @@ paddr_t cm_alloc_npages(unsigned npages) {
     unsigned start_index = 0, end_index = 0;
     for (end_index = 0; end_index < cm_entries; end_index++) {
         spinlock_acquire(&busy_lock);
-        if (coremap[end_index].busy) {
-            // Entry busy. Give up and restart the contiguous region
+        if (coremap[end_index].busy ||
+            coremap[end_index].allocated) {
+            spinlock_release(&busy_lock);
+            // Entry busy or can't be moved. Give up and restart the contiguous region
             // Set the pages we had reserved to not busy
             for (; start_index < end_index; start_index++)
                 coremap[start_index].busy = false;
-            spinlock_release(&busy_lock);
             KASSERT(start_index == end_index);
             // start_index should point to the start of a potentially free region
             start_index++;
             continue;
         } else {
-            if (coremap[end_index].allocated) {
-                // We can't move this page. Have to start over
-                for (; start_index < end_index; start_index++)
-                    coremap[start_index].busy = false;
-                KASSERT(start_index == end_index);
-                start_index++;
-            } else {
-                // This page is free!!! Reserve it
-                coremap[end_index].busy = true;
-                // Check if we are done
-                KASSERT(end_index - start_index < npages);
-                if (end_index - start_index == npages - 1) {
-                    // Take ownership of all the reserved ones
-                    for (unsigned i = start_index; i <= end_index; i++) {
-                        coremap[i].vm_addr = CM_TO_PADDR(i);  // TODO TEMP: for debugging. Should get overridden anyway
-                        coremap[i].is_kernel = true;
-                        coremap[i].allocated = true;
-                        coremap[i].pid = 1;
-                        // Can't be set after we set busy to false
-                        if (i < end_index)
-                            coremap[i].has_next = true;
-                        coremap[i].busy = false;
-                    }
-                    spinlock_release(&busy_lock);
-                    return CM_TO_PADDR(start_index);
+            // This page is free!!! Reserve it
+            coremap[end_index].busy = true;
+            spinlock_release(&busy_lock);
+            // Check if we are done
+            KASSERT(end_index - start_index < npages);
+            if (end_index - start_index == npages - 1) {
+                // Take ownership of all the reserved ones
+                for (unsigned i = start_index; i <= end_index; i++) {
+                    coremap[i].vm_addr = CM_TO_PADDR(i);  // TODO TEMP: for debugging. Should get overridden anyway
+                    coremap[i].is_kernel = true;
+                    coremap[i].allocated = true;
+                    coremap[i].pid = 1;
+                    // Can't be set after we set busy to false
+                    if (i < end_index)
+                        coremap[i].has_next = true;
+                    coremap[i].busy = false;
                 }
+                return CM_TO_PADDR(start_index);
             }
-            spinlock_release(&busy_lock);   
         }
         //KASSERT(!spinlock_do_i_hold(&busy_lock)); // Seems to be hanging on this
     }
@@ -208,9 +205,9 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         }
 
         // Check if we should continue, unlock this entry
-        cm_index++;
         has_next = coremap[cm_index].has_next;
         coremap[cm_index].busy = false;
+        cm_index++;
     }
 }
 
