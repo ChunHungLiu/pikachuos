@@ -14,6 +14,8 @@
 #include <vfs.h>
 #include <kern/fcntl.h>
 
+#define CM_DEBUG(message...) kprintf("cm: ");kprintf(message);
+
 #define PAGE_LINEAR
 
 #define CM_TO_PADDR(i) ((paddr_t)PAGE_SIZE * (i + cm_base))
@@ -113,6 +115,7 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     KASSERT(coremap[cm_index].busy == true);
     // If alread free, this should not be allocated. If evicted, should not be either
     KASSERT(coremap[cm_index].allocated == 0);
+    CM_DEBUG("allocating (cm_entry) %d to (addrspace) %p\n", cm_index, as);
     coremap[cm_index].allocated = 1;
 
     // KASSERT(va != 0);
@@ -153,6 +156,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
             if (end_index - start_index == npages - 1) {
                 // Take ownership of all the reserved ones
                 for (unsigned i = start_index; i <= end_index; i++) {
+                    CM_DEBUG("allocating (cm_entry) %d to kernel\n", i);
                     coremap[i].vm_addr = CM_TO_PADDR(i);  // TODO TEMP: for debugging. Should get overridden anyway
                     coremap[i].is_kernel = true;
                     coremap[i].allocated = true;
@@ -185,7 +189,16 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         coremap[cm_index].busy = true;
         spinlock_release(&busy_lock);
 
-        coremap[cm_index].allocated = false;
+        CM_DEBUG("deallocating (cm_entry) %d from (addrspace) %p\n", cm_index, as);
+        coremap[cm_index].allocated     = 0;
+        coremap[cm_index].vm_addr       = 0;
+        coremap[cm_index].is_kernel     = 0;
+        coremap[cm_index].allocated     = 0;
+        coremap[cm_index].has_next      = 0;
+        coremap[cm_index].used_recently = 0;
+        coremap[cm_index].dirty         = 0;
+        coremap[cm_index].pid           = 0;
+        coremap[cm_index].addrspace     = 0;
 
         // The pagetable entry should be gone...nevermind, we need the backing store index
         //if (as != NULL) {
@@ -206,6 +219,9 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
 
         // Check if we should continue, unlock this entry
         has_next = coremap[cm_index].has_next;
+        if (has_next) {
+            CM_DEBUG("continuing to next contiguous page\n");
+        }
         coremap[cm_index].busy = false;
         cm_index++;
     }
