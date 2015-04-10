@@ -465,12 +465,15 @@ int bs_write_out(int cm_index) {
     struct addrspace *as = coremap[cm_index].as;
     vaddr_t va = coremap[cm_index].vm_addr;
     struct pt_entry *pte = pt_get_entry(as, va);
+    int spl;
 
     // TODO: error checking
+    spl = splhigh();
     offset = pte->store_index;
+    kprintf("bs: writing page (paddr) %x to disk at (offset) %d...", paddr, offset);
     err = bs_write_page((void *) PADDR_TO_KVADDR(paddr), offset);
-
-    // TODO: This will relate to dirty page management
+    kprintf("done\n");
+    splx(spl);
 
     return err;
 }
