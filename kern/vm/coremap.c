@@ -38,6 +38,8 @@ static unsigned evict_hand = 0;
 static unsigned mem_free;
 static struct lock *mem_free_lock;
 
+static int cm_do_evict(int cm_index);
+
 struct vnode *bs_file;
 struct bitmap *bs_map;
 struct lock *bs_map_lock;
@@ -155,13 +157,14 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
 /* Linear probing to find free contiguous pages. We reserve memory and try to
  * grow it. If we encounter a kernel page (can't be moved), then we unreserve
  * the previous pages we had and start over after it. */
+// NOTE: unlike cm_alloc_page, this is ONLY used by the kernel
 paddr_t cm_alloc_npages(unsigned npages) {
     // This should be the kernel calling this. Can we check this
     unsigned start_index = 0, end_index = 0;
     for (end_index = 0; end_index < cm_entries; end_index++) {
         spinlock_acquire(&busy_lock);
         if (coremap[end_index].busy ||
-            coremap[end_index].allocated) {
+            coremap[end_index].is_kernel) {
             spinlock_release(&busy_lock);
             // Entry busy or can't be moved. Give up and restart the contiguous region
             // Set the pages we had reserved to not busy
@@ -180,6 +183,11 @@ paddr_t cm_alloc_npages(unsigned npages) {
             if (end_index - start_index == npages - 1) {
                 // Take ownership of all the reserved ones
                 for (unsigned i = start_index; i <= end_index; i++) {
+                    // We may need to page out user pages to make space for our kernel
+                    if (coremap[i].allocated) {
+                        cm_do_evict(i);
+                        KASSERT(!coremap[i].allocated);
+                    }
                     CM_DEBUG("allocating (cm_entry) %d to kernel...", i);
                     coremap[i].vm_addr = CM_TO_PADDR(i);  // TODO TEMP: for debugging. Should get overridden anyway
                     coremap[i].is_kernel = true;
@@ -291,17 +299,13 @@ int cm_get_free_page(void) {
     KASSERT(false);
 }
 
-/* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
+/* Evict a specific page from memory. This is needed for multipage allocation. */
 // Need to sync 2 addrspaces
 // Simply update the pte related to paddr
-int cm_evict_page(){
+static int cm_do_evict(int cm_index) {
     // Use our eviction policy to choose a page to evict
     // coremap[cm_index] should be busy when this returns
     // TODO: There's no synchronization at all. 
-    int cm_index;
-
-    cm_index = cm_choose_evict_page();
-
     // Write to backing storage no matter what -- Not anymore! We now have dirty bits!
     KASSERT(coremap[cm_index].busy);
     if (coremap[cm_index].dirty) {
@@ -327,6 +331,15 @@ int cm_evict_page(){
     spinlock_release(&cm_used_lock);
 
     return cm_index;
+}
+
+/* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
+int cm_evict_page(){
+    int cm_index;
+
+    cm_index = cm_choose_evict_page();
+
+    return cm_do_evict(cm_index);
 }
 
 void cm_mem_change(int amount) {
