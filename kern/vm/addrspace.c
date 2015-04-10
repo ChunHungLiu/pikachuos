@@ -257,6 +257,8 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	region->base = vaddr;
 	region->size = sz;
 	region->permission = readable + writeable + executable;
+
+	cm_mem_change(-sz);
 	
 	err = array_add(as->as_regions, region, NULL);
 	if (err)

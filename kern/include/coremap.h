@@ -75,6 +75,12 @@ void cm_set_dirty(paddr_t paddr);
 
 int cm_get_free_page(void);
 
+/* Should be called any time memory is given out */
+void cm_mem_change(int amount);
+
+/* Returns the amount of memory that can still be backed by the backing store */
+unsigned cm_mem_free(void);
+
 void bs_bootstrap(void);
 int bs_write_out(int cm_index);
 int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index);

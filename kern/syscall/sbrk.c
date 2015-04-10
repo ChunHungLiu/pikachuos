@@ -12,27 +12,33 @@
 #include <test.h>
 #include <vnode.h>
 #include <copyinout.h>
+#include <coremap.h>
 
 #define VM_STACKPAGES 18
 
-
-// TODO: sbrk code goes here
 int
 sys_sbrk(int amount, int *retval) {
-	(void) amount;
-	(void) retval;
-	struct addrspace *as = curproc->p_addrspace;
+    struct addrspace *as = curproc->p_addrspace;
+    kprintf("sbrk: amount = %d, free = %d\n", amount, cm_mem_free());
 
-    if (amount <= 0) {
-    	*retval = as->heap_end;
-    	return 0;
+    *retval = as->heap_end;
+
+    if (amount > (int) cm_mem_free()) {
+        kprintf("sbrk: no memory\n");
+        return ENOMEM;
     }
 
+    if (as->heap_end + amount < as->heap_start) {
+        kprintf("sbrk: negative heap size\n");
+        return EINVAL;
+    }
+
+    kprintf("sbrk: new heap_end = %x, stack top = %x\n", as->heap_end + amount, USERSTACK - VM_STACKPAGES * PAGE_SIZE);
     if (as->heap_end + amount < USERSTACK - VM_STACKPAGES * PAGE_SIZE) {
-        *retval = as->heap_end;
+        cm_mem_change(-amount);
         as->heap_end += amount;
         return 0;
     }
 
-    return ENOMEM;
+    panic("la de da de da");
 }

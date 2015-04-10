@@ -13,6 +13,7 @@
 #include <vnode.h>
 #include <vfs.h>
 #include <kern/fcntl.h>
+#include <stat.h>
 
 //#define CM_DEBUG(message...) kprintf("cm: ");kprintf(message);
 #define CM_DEBUG(message...) ;
@@ -30,8 +31,12 @@ static unsigned cm_entries;
 static unsigned cm_base;
 
 static unsigned cm_used;
+static struct spinlock cm_used_lock = SPINLOCK_INITIALIZER;
 
 static unsigned evict_hand = 0;
+
+static unsigned mem_free;
+static struct lock *mem_free_lock;
 
 struct vnode *bs_file;
 struct bitmap *bs_map;
@@ -82,8 +87,8 @@ void cm_bootstrap(void) {
         coremap[i].as = NULL;    
     }
 
-    // Set the coremap entries that reference themselves to be used
-
+    // Initialize lock on the number of used entries
+    //cm_used_lock = lock_create("Used coremap lock");
 }
 
 /* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
@@ -135,6 +140,14 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     coremap[cm_index].as = as;
     coremap[cm_index].is_kernel = (as == NULL);
     coremap[cm_index].busy = false;
+
+    //if (cm_used_lock) {
+        spinlock_acquire(&cm_used_lock);
+        cm_used++;
+        //kprintf("cm: %d of %d pages used\n", cm_used, cm_entries);
+        spinlock_release(&cm_used_lock);
+    //}
+
     CM_DONE;
     return CM_TO_PADDR(cm_index);
 }
@@ -177,6 +190,13 @@ paddr_t cm_alloc_npages(unsigned npages) {
                     coremap[i].busy = false;
                     CM_DONE;
                 }
+
+                //if (&cm_used_lock) {
+                    spinlock_acquire(&cm_used_lock);
+                    cm_used += npages;
+                    spinlock_release(&cm_used_lock);
+                //}
+
                 return CM_TO_PADDR(start_index);
             }
         }
@@ -225,6 +245,14 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         coremap[cm_index].used_recently = 0;
         coremap[cm_index].dirty         = 0;
         coremap[cm_index].as            = 0;
+
+
+        //if (&cm_used_lock) {
+            spinlock_acquire(&cm_used_lock);
+            cm_used--;
+            spinlock_release(&cm_used_lock);
+        //}
+
         CM_DONE;
 
         // The pagetable entry should be gone...nevermind, we need the backing store index
@@ -258,6 +286,8 @@ int cm_get_free_page(void) {
     }
 
     // Either cm_used = cm_entries, or there was a free space
+    int index = bs_alloc_index();
+    kprintf("%d\n", index);
     KASSERT(false);
 }
 
@@ -272,9 +302,6 @@ int cm_evict_page(){
 
     cm_index = cm_choose_evict_page();
 
-    // Shoot down other CPUs
-    vm_tlbshootdown_all();
-
     // Write to backing storage no matter what -- Not anymore! We now have dirty bits!
     KASSERT(coremap[cm_index].busy);
     if (coremap[cm_index].dirty) {
@@ -283,13 +310,36 @@ int cm_evict_page(){
     }
 
     // Need to find the pt entry and mark it as not in memory anymore
-    struct pt_entry *pte = pt_get_entry(coremap[cm_index].as,coremap[cm_index].vm_addr<<12);
+    struct pt_entry *pte = pt_get_entry(coremap[cm_index].as, coremap[cm_index].vm_addr);
     KASSERT(pte != NULL);
 
+    // TODO: possible deadlock bug
+    lock_acquire(pte->lk);
     pte->in_memory = 0;
+    // Shoot down this entry
+    //vm_tlbshootdown_all();
+    lock_release(pte->lk);
+
     coremap[cm_index].allocated = 0;
+    
+    spinlock_acquire(&cm_used_lock);
+    cm_used--;
+    spinlock_release(&cm_used_lock);
 
     return cm_index;
+}
+
+void cm_mem_change(int amount) {
+    lock_acquire(mem_free_lock);
+    mem_free += amount;
+    lock_release(mem_free_lock);
+}
+
+unsigned cm_mem_free() {
+    lock_acquire(mem_free_lock);
+    int ret = mem_free;
+    lock_release(mem_free_lock);
+    return ret;
 }
 
 // NOT COMPLETE
@@ -299,16 +349,15 @@ where we will switch out different eviction policies */
 #ifdef PAGE_LINEAR
 int cm_choose_evict_page() {
     int i = 0;
-    struct cm_entry cm_entry;
     while (true) {
-        cm_entry = coremap[i];
         spinlock_acquire(&busy_lock);
-        if (cm_entry.busy){
+        if (coremap[i].busy || coremap[i].is_kernel){
             spinlock_release(&busy_lock);
             i = (i + 1) % cm_entries;
             continue;
         } else {
-            CM_SET_BUSY(cm_entry);
+            CM_SET_BUSY(coremap[i]);
+            KASSERT(coremap[i].busy);
             spinlock_release(&busy_lock);
             return i;
         }
@@ -316,19 +365,17 @@ int cm_choose_evict_page() {
 }
 #elif PAGE_CLOCK
 int cm_choose_evict_page() {
-    struct cm_entry cm_entry;
     while (true) {
-        cm_entry = coremap[i];
         spinlock_acquire(&busy_lock);
-        if (cm_entry.busy || cm_entry.is_kernel || cm_entry.used_recently){
+        if (coremap[i].busy || coremap[i].is_kernel || coremap[i].used_recently){
             spinlock_release(&busy_lock);
-            if (cm_entry.used_recently) {
-                cm_entry.used_recently = false;
+            if (coremap[i].used_recently) {
+                coremap[i].used_recently = false;
             }
             evict_hand = (evict_hand + 1) % cm_entries;
             continue;
         } else {
-            CM_SET_BUSY(cm_entry);
+            CM_SET_BUSY(coremap[i]);
             spinlock_release(&busy_lock);
             return i;
         }
@@ -347,6 +394,8 @@ void cm_set_dirty(paddr_t paddr) {
 // Code for backing storage, could be moved to somewhere else.
 
 void bs_bootstrap() {
+    struct stat f_stat;
+
     // open file, bitmap and lock
     char *path = kstrdup("lhd0raw:");
     if (path == NULL)
@@ -356,13 +405,27 @@ void bs_bootstrap() {
     if (err)
         panic("bs_bootstrap: couldn't open disk");
 
-    bs_map = bitmap_create(1000);
+    // Get swap space
+    VOP_STAT(bs_file, &f_stat);
+    mem_free = f_stat.st_size;
+
+    bs_map = bitmap_create(mem_free / PAGE_SIZE);
     if (bs_map == NULL)
         panic("bs_bootstrap: couldn't create disk map");
 
     bs_map_lock = lock_create("disk map lock");
     if (bs_map_lock == NULL)
         panic("bs_bootstrap: couldn't create disk map lock");
+    
+    mem_free_lock = lock_create("Free memory lock");
+    if (mem_free_lock == NULL)
+        panic("bs_bootstrap: couldn't create free memory tracker lock");
+
+    bs_alloc_index();
+    lock_acquire(mem_free_lock);
+    mem_free--;
+    lock_release(mem_free_lock);
+    
     return;
 }
 

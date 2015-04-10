@@ -25,6 +25,7 @@ struct pt_entry** pagetable_create() {
  * to each other) and in memory.
  */
 struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
+	kprintf("pt: Allocating %x...", v_addr);
 	uint32_t index_hi = v_addr >> 22;
 
 	// Check that the L2 pagetable exists, creating if it doesn't
@@ -39,6 +40,8 @@ struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
 	entry->allocated = true;
 	entry->p_addr = cm_alloc_page(as, v_addr);
 	entry->lk = lock_create("pt");
+
+	kprintf("done\n");
 
 	return entry;
 }
@@ -92,13 +95,8 @@ void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
                 if (entry.allocated) {
                 	// kprintf("pt: dealloc {paddr: %x, store_index: %x, in_memory: %d, allocated: %d, lock: %p}\n",
                 		// entry.p_addr, entry.store_index, entry.in_memory, entry.allocated, entry.lk);
-                    if (entry.in_memory) {
-                        pt_dealloc_page(as, (i << 22) | (j << 12));
-                    } 
-                    else {
-                        bs_dealloc_index(entry.store_index);
-                        pt_dealloc_page(as, (i << 22) | (j << 12));
-                    }
+                    pt_dealloc_page(as, (i << 22) | (j << 12));
+                    bs_dealloc_index(entry.store_index);
                 }
             }
         }
