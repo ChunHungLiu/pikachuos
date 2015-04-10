@@ -29,7 +29,6 @@ struct cm_entry {
 	bool busy;
 	bool used_recently;
 	bool dirty;
-	int pid;			// The process who owns this memory
 	struct addrspace *as;
 };
 

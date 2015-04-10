@@ -35,4 +35,4 @@ sys_sbrk(int amount, int *retval) {
     }
 
     return ENOMEM;
-
+}

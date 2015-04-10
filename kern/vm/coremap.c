@@ -74,7 +74,6 @@ void cm_bootstrap(void) {
 	for (i=0; i<(int)cm_entries; i++) {
         coremap[i].vm_addr = 0;
         coremap[i].busy = 0;
-        coremap[i].pid = 0; // Tianyu, we can use 0. 0 PID is invalid. Kernel PID is 1. See kern\include\proc.h
         coremap[i].is_kernel = 0;
         coremap[i].allocated = 0;
         coremap[i].has_next = 0;
@@ -132,8 +131,6 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
         }
     }
     // KASSERT(va != 0);
-    // Are we supposed to track PID this way?
-    coremap[cm_index].pid = curproc->pid;
     coremap[cm_index].vm_addr = va;
     coremap[cm_index].as = as;
     coremap[cm_index].is_kernel = (as == NULL);
@@ -174,7 +171,6 @@ paddr_t cm_alloc_npages(unsigned npages) {
                     coremap[i].vm_addr = CM_TO_PADDR(i);  // TODO TEMP: for debugging. Should get overridden anyway
                     coremap[i].is_kernel = true;
                     coremap[i].allocated = true;
-                    coremap[i].pid = 1;
                     // Can't be set after we set busy to false
                     if (i < end_index)
                         coremap[i].has_next = true;
@@ -228,7 +224,6 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         coremap[cm_index].has_next      = 0;
         coremap[cm_index].used_recently = 0;
         coremap[cm_index].dirty         = 0;
-        coremap[cm_index].pid           = 0;
         coremap[cm_index].as            = 0;
         CM_DONE;
 
