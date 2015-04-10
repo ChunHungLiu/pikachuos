@@ -60,6 +60,7 @@ static int cm_do_evict(int cm_index, struct addrspace* as, vaddr_t va);
 struct vnode *bs_file;
 struct bitmap *bs_map;
 struct lock *bs_map_lock;
+struct semaphore *tlb_sem;
 
 void cm_used_change(int amount) {
     spinlock_acquire(&cm_used_lock);
@@ -125,6 +126,8 @@ void cm_bootstrap(void) {
         coremap[i].used_recently = 0;
         coremap[i].as = NULL;    
     }
+
+    tlb_sem = sem_create("Shootdown", 0);
 }
 
 /**
@@ -143,6 +146,7 @@ int cm_alloc_entry(struct addrspace *as, vaddr_t vaddr, bool busy) {
     KASSERT(vaddr != 0);
 
     int cm_index;
+    paddr_t pa;
 
     // Get the index of a free page, or -1 if none are free
     cm_index = cm_get_free_page();
@@ -170,6 +174,9 @@ int cm_alloc_entry(struct addrspace *as, vaddr_t vaddr, bool busy) {
     coremap[cm_index].as = as;
     coremap[cm_index].is_kernel = (as == NULL);
     coremap[cm_index].busy = busy;
+    pa = CM_TO_PADDR(cm_index);
+
+    bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 
     // Track the number of used coremap entries
     cm_used_change(1);
@@ -459,7 +466,7 @@ static int cm_do_evict(int cm_index, struct addrspace *old_as, vaddr_t old_va) {
 
 
     // We invalidate the virtual address on all cpus before we touch the pagetable entry
-    ipi_tlbshootdown_allcpus(&(const struct tlbshootdown){vaddr, sem_create("Shootdown", 0)});
+    ipi_tlbshootdown_allcpus(&(const struct tlbshootdown){vaddr, tlb_sem});
 
     CM_DEBUG("paging out (cm_entry) %d from (addrspace) %p...", cm_index, as);
 

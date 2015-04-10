@@ -1293,7 +1293,6 @@ ipi_tlbshootdown_allcpus(const struct tlbshootdown *mapping)
 	for (i = 0; i < numcpus; i++) {
 		P(mapping->sem);
 	}
-	sem_destroy(mapping->sem);
 }
 
 void
