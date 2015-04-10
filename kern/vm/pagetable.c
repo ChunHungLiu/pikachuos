@@ -34,10 +34,10 @@ struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
 	}
 
 	struct pt_entry *entry = pt_get_entry(as, v_addr);
-	entry->p_addr = cm_alloc_page(as, v_addr);
-	entry->store_index = 0;
+	entry->store_index = bs_alloc_index();
 	entry->in_memory = true;
 	entry->allocated = true;
+	entry->p_addr = cm_alloc_page(as, v_addr);
 	entry->lk = lock_create("pt");
 
 	return entry;

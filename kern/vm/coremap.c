@@ -93,6 +93,10 @@ paddr_t cm_load_page(struct addrspace *as, vaddr_t va) {
     // TODO: bs_read_in should happen here
     (void) as;
     (void) va;
+    // paddr_t pa;
+    // pa = cm_alloc_page(as, va);
+    // bs_read_in();
+
     return 0;
 }
 
@@ -120,6 +124,12 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     CM_DEBUG("allocating (cm_entry) %d to (addrspace) %p...", cm_index, as);
     coremap[cm_index].allocated = 1;
 
+    if (as != NULL) {
+        struct pt_entry *pte = pt_get_entry(as, va);
+        if (!pte->in_memory && pte->allocated) {
+            bs_read_in(as, va, cm_index);
+        }
+    }
     // KASSERT(va != 0);
     // Are we supposed to track PID this way?
     coremap[cm_index].pid = curproc->pid;
@@ -222,10 +232,11 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         //kprintf("done\n");
 
         // The pagetable entry should be gone...nevermind, we need the backing store index
-        //if (as != NULL) {
-        //    struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
-        //    KASSERT(pt_entry == NULL);
-        //}
+        if (as != NULL) {
+           struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
+           KASSERT(pt_entry != NULL);
+           bs_dealloc_index(pt_entry->store_index);
+        }
 
         coremap[cm_index].busy = false;
         cm_index++;
@@ -272,6 +283,7 @@ int cm_evict_page(){
     KASSERT(coremap[cm_index].busy);
     if (coremap[cm_index].dirty) {
         bs_write_out(cm_index);
+        coremap[cm_index].dirty = 0;
     }
 
     // Need to find the pt entry and mark it as not in memory anymore
@@ -361,17 +373,13 @@ void bs_bootstrap() {
 int bs_write_out(int cm_index) {
     int err, offset;
     paddr_t paddr = CM_TO_PADDR(cm_index);
-    struct iovec iov;
-    struct uio u;
     struct addrspace *as = coremap[cm_index].as;
     vaddr_t va = coremap[cm_index].vm_addr;
     struct pt_entry *pte = pt_get_entry(as, va);
 
     // TODO: error checking
     offset = pte->store_index;
-    uio_kinit(&iov, &u, (void *) PADDR_TO_KVADDR(paddr), PAGE_SIZE, 
-        offset * PAGE_SIZE, UIO_WRITE);
-    err = VOP_WRITE(bs_file, &u);
+    err = bs_write_page(paddr, offset);
 
     // TODO: This will relate to dirty page management
 
@@ -380,28 +388,39 @@ int bs_write_out(int cm_index) {
 
 // Put stuff in dest.
 int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index) {
-    int err, offset;
+    int err;
+    unsigned offset;
     paddr_t paddr = CM_TO_PADDR(cm_index);
-    struct iovec iov;
-    struct uio u;
     struct pt_entry *pte = pt_get_entry(as, va);
 
     // TODO: error checking
     offset = pte->store_index;
-    uio_kinit(&iov, &u, (void *) PADDR_TO_KVADDR(paddr), PAGE_SIZE, 
-        offset * PAGE_SIZE, UIO_READ);
-    err = VOP_READ(bs_file, &u);
-
+    err = bs_read_page(paddr, offset);
     if (!err){
-        coremap[cm_index].vm_addr = va>>12;
-        coremap[cm_index].as = as;
-
-        pte->store_index = offset;
         pte->in_memory = 1;
-        pte->p_addr = paddr>>12;
+        pte->p_addr = paddr;
     }
 
     return err;
+}
+
+
+int bs_write_page(paddr_t paddr, unsigned offset) {
+    struct iovec iov;
+    struct uio u;
+    uio_kinit(&iov, &u, (void *) PADDR_TO_KVADDR(paddr), PAGE_SIZE, 
+        offset*PAGE_SIZE, UIO_WRITE);
+
+    return VOP_WRITE(bs_file,&u);
+}
+
+int bs_read_page(paddr_t paddr, unsigned offset) {
+    struct iovec iov;
+    struct uio u;
+    uio_kinit(&iov, &u, (void *) PADDR_TO_KVADDR(paddr), PAGE_SIZE, 
+        offset*PAGE_SIZE, UIO_READ);
+
+    return VOP_READ(bs_file,&u);
 }
 
 unsigned bs_alloc_index() {
