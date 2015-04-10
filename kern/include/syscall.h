@@ -72,5 +72,5 @@ void sys__exit(int exitcode);
 int sys_waitpid(pid_t pid, userptr_t returncode, int flags, pid_t *retval);
 int sys_getpid(pid_t *retval);
 int sys_execv(char* porgname, char** args, int *retval);
-
+int sys_sbrk(int amount, int *retval);
 #endif /* _SYSCALL_H_ */
