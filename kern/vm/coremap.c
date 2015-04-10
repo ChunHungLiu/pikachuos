@@ -19,7 +19,7 @@
 #define CM_DEBUG(message...) ;
 #define CM_DONE (void)0;
 
-#define PAGE_LINEAR
+#define PAGE_RANDOM
 
 #define CM_TO_PADDR(i) ((paddr_t)PAGE_SIZE * (i + cm_base))
 #define PADDR_TO_CM(paddr)  ((paddr / PAGE_SIZE) - cm_base)
@@ -363,7 +363,24 @@ int cm_choose_evict_page() {
         }
     }
 }
-#elif PAGE_CLOCK
+#elif defined(PAGE_RANDOM)
+int cm_choose_evict_page() {
+    int i = random() % cm_entries;
+    while (true) {
+        spinlock_acquire(&busy_lock);
+        if (coremap[i].busy || coremap[i].is_kernel){
+            spinlock_release(&busy_lock);
+            i = (i + 1) % cm_entries;
+            continue;
+        } else {
+            CM_SET_BUSY(coremap[i]);
+            KASSERT(coremap[i].busy);
+            spinlock_release(&busy_lock);
+            return i;
+        }
+    }
+}
+#elif defined(PAGE_CLOCK)
 int cm_choose_evict_page() {
     while (true) {
         spinlock_acquire(&busy_lock);
