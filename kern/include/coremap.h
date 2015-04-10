@@ -81,6 +81,6 @@ int bs_write_out(int cm_index);
 int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index);
 unsigned bs_alloc_index(void);
 void bs_dealloc_index(unsigned index);
-int bs_write_page(void *paddr, unsigned offset);
-int bs_read_page(void *paddr, unsigned offset);
+int bs_write_page(void *vaddr, unsigned offset);
+int bs_read_page(void *vaddr, unsigned offset);
 #endif

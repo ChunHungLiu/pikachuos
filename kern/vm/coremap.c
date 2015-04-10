@@ -405,19 +405,19 @@ int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index) {
 }
 
 
-int bs_write_page(void *paddr, unsigned offset) {
+int bs_write_page(void *vaddr, unsigned offset) {
     struct iovec iov;
     struct uio u;
-    uio_kinit(&iov, &u, paddr, PAGE_SIZE, 
+    uio_kinit(&iov, &u, vaddr, PAGE_SIZE, 
         offset*PAGE_SIZE, UIO_WRITE);
 
     return VOP_WRITE(bs_file,&u);
 }
 
-int bs_read_page(void *paddr, unsigned offset) {
+int bs_read_page(void *vaddr, unsigned offset) {
     struct iovec iov;
     struct uio u;
-    uio_kinit(&iov, &u, paddr, PAGE_SIZE, 
+    uio_kinit(&iov, &u, vaddr, PAGE_SIZE, 
         offset*PAGE_SIZE, UIO_READ);
 
     return VOP_READ(bs_file,&u);
