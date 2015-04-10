@@ -14,8 +14,9 @@
 #include <vfs.h>
 #include <kern/fcntl.h>
 
-// #define CM_DEBUG(message...) kprintf("cm: ");kprintf(message);
+//#define CM_DEBUG(message...) kprintf("cm: ");kprintf(message);
 #define CM_DEBUG(message...) ;
+#define CM_DONE (void)0;
 
 #define PAGE_LINEAR
 
@@ -127,7 +128,7 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     coremap[cm_index].as = as;
     coremap[cm_index].is_kernel = (as == NULL);
     coremap[cm_index].busy = false;
-    //kprintf("done\n");
+    CM_DONE;
     return CM_TO_PADDR(cm_index);
 }
 
@@ -168,7 +169,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
                     if (i < end_index)
                         coremap[i].has_next = true;
                     coremap[i].busy = false;
-                    //kprintf("done\n");
+                    CM_DONE;
                 }
                 return CM_TO_PADDR(start_index);
             }
@@ -219,7 +220,7 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         coremap[cm_index].dirty         = 0;
         coremap[cm_index].pid           = 0;
         coremap[cm_index].as            = 0;
-        //kprintf("done\n");
+        CM_DONE;
 
         // The pagetable entry should be gone...nevermind, we need the backing store index
         //if (as != NULL) {
