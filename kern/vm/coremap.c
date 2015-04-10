@@ -379,7 +379,7 @@ int bs_write_out(int cm_index) {
 
     // TODO: error checking
     offset = pte->store_index;
-    err = bs_write_page(paddr, offset);
+    err = bs_write_page((void *) PADDR_TO_KVADDR(paddr), offset);
 
     // TODO: This will relate to dirty page management
 
@@ -395,7 +395,7 @@ int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index) {
 
     // TODO: error checking
     offset = pte->store_index;
-    err = bs_read_page(paddr, offset);
+    err = bs_read_page((void *) PADDR_TO_KVADDR(paddr), offset);
     if (!err){
         pte->in_memory = 1;
         pte->p_addr = paddr;
@@ -405,19 +405,19 @@ int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index) {
 }
 
 
-int bs_write_page(paddr_t paddr, unsigned offset) {
+int bs_write_page(void *paddr, unsigned offset) {
     struct iovec iov;
     struct uio u;
-    uio_kinit(&iov, &u, (void *) PADDR_TO_KVADDR(paddr), PAGE_SIZE, 
+    uio_kinit(&iov, &u, paddr, PAGE_SIZE, 
         offset*PAGE_SIZE, UIO_WRITE);
 
     return VOP_WRITE(bs_file,&u);
 }
 
-int bs_read_page(paddr_t paddr, unsigned offset) {
+int bs_read_page(void *paddr, unsigned offset) {
     struct iovec iov;
     struct uio u;
-    uio_kinit(&iov, &u, (void *) PADDR_TO_KVADDR(paddr), PAGE_SIZE, 
+    uio_kinit(&iov, &u, paddr, PAGE_SIZE, 
         offset*PAGE_SIZE, UIO_READ);
 
     return VOP_READ(bs_file,&u);

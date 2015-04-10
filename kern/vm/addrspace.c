@@ -33,6 +33,7 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <proc.h>
+#include <coremap.h>
 
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
@@ -73,18 +74,86 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	(void) old;
 	
 	struct addrspace *newas;
+	int i,j, errno, retval, offset, region_len;
+	struct region *old_region, *new_region;
+	void *buffer;
+	struct pt_entry *old_entry, *new_entry;
 
 	newas = as_create();
 	if (newas==NULL) {
 		return ENOMEM;
 	}
 
-	/*
-	 * Write this.
-	 */
+	buffer = kmalloc(PAGE_SIZE);
+
+	newas->heap_start = old->heap_start;
+	newas->heap_end = old->heap_end;
+
+	// Copy regions
+	region_len = array_num(old->as_regions);
+	for (i = 0; i < region_len; i++) {
+		old_region = array_get(old->as_regions, i);
+		new_region = kmalloc(sizeof(struct region));
+		if (old_region == NULL || new_region == NULL) {
+			goto err0;
+		}
+
+		new_region->base = old_region->base;
+		new_region->size = old_region->size;
+		new_region->permission = old_region->permission;
+
+		errno = array_add(newas->as_regions, new_region, NULL);
+		if (errno) {
+			goto err0;
+		}
+	}
+
+	// Copy page table
+	for (i = 0; i < PT_LEVEL_SIZE; i++){
+		if (old->pagetable[i] != NULL){
+			newas->pagetable[i] = kmalloc(PT_LEVEL_SIZE * sizeof(struct pt_entry));
+			memset(newas->pagetable[i], 0, PT_LEVEL_SIZE * sizeof(struct pt_entry));
+			// For each page table entry
+			for (j = 0; j < PT_LEVEL_SIZE; j++){
+				old_entry = &old->pagetable[i][j];
+				new_entry = &newas->pagetable[i][j];
+				if (old_entry->allocated){
+					offset = bs_alloc_index();
+					if (old_entry->in_memory){
+						retval = bs_write_page((void *) PADDR_TO_KVADDR(old_entry->p_addr), offset);
+						KASSERT(retval == 0);					
+					} else {
+						// Make a temporary buffer and move the page in disk
+						retval = bs_read_page(buffer, old_entry->store_index);
+						KASSERT(retval == 0);
+
+						retval = bs_write_page(buffer, offset);
+						KASSERT(retval == 0);
+					}
+					// Update entry
+					// TODO: this will be caught by coremap
+					new_entry->p_addr = 0;
+					new_entry->store_index = offset;
+					new_entry->in_memory = false;
+					new_entry->allocated = true;
+					new_entry->lk = lock_create("pt");
+				}
+			}
+		}
+	}
+	kfree(buffer);
 
 	*ret = newas;
+
 	return 0;
+	
+	err0:
+	for (i=0; i < (int)region_len; i++){
+		new_region = (struct region *)array_get(newas->as_regions,i);
+		if (new_region != NULL)
+			kfree(new_region);
+	}
+	return ENOMEM;
 }
 
 void
