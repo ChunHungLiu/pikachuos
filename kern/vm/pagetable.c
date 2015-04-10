@@ -11,8 +11,12 @@
 
 /* Create a new page table. The new page table will be associated with an addrspace. */
 struct pt_entry** pagetable_create() {
-	// Code goes here
-	return kmalloc(PT_LEVEL_SIZE * sizeof(struct pt_entry*));
+	int i;
+	struct pt_entry** pt = kmalloc(PT_LEVEL_SIZE * sizeof(struct pt_entry*));
+	for (i = 0; i < PT_LEVEL_SIZE; i++) {
+		pt[i] = NULL;
+	}
+	return pt;
 }
 
 /* 
@@ -45,8 +49,7 @@ void pt_dealloc_page(struct addrspace *as, vaddr_t v_addr) {
 
 	lock_acquire(entry->lk);
 
-	paddr_t p_addr = KVADDR_TO_PADDR(v_addr);
-	cm_dealloc_page(NULL, p_addr);
+	cm_dealloc_page(NULL, entry->p_addr);
 
 	entry->p_addr = 0;
 	entry->store_index = 0;
@@ -96,7 +99,6 @@ void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
                         bs_dealloc_index(entry.store_index);
                         pt_dealloc_page(as, (i << 22) | (j << 12));
                     }
-                    lock_destroy(entry.lk);
                 }
             }
         }

@@ -116,7 +116,7 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     KASSERT(coremap[cm_index].busy == true);
     // If alread free, this should not be allocated. If evicted, should not be either
     KASSERT(coremap[cm_index].allocated == 0);
-    CM_DEBUG("allocating (cm_entry) %d to (addrspace) %p\n", cm_index, as);
+    CM_DEBUG("allocating (cm_entry) %d to (addrspace) %p...", cm_index, as);
     coremap[cm_index].allocated = 1;
 
     // KASSERT(va != 0);
@@ -126,6 +126,7 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
     coremap[cm_index].as = as;
     coremap[cm_index].is_kernel = (as == NULL);
     coremap[cm_index].busy = false;
+    kprintf("done\n");
     return CM_TO_PADDR(cm_index);
 }
 
@@ -157,7 +158,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
             if (end_index - start_index == npages - 1) {
                 // Take ownership of all the reserved ones
                 for (unsigned i = start_index; i <= end_index; i++) {
-                    CM_DEBUG("allocating (cm_entry) %d to kernel\n", i);
+                    CM_DEBUG("allocating (cm_entry) %d to kernel...", i);
                     coremap[i].vm_addr = CM_TO_PADDR(i);  // TODO TEMP: for debugging. Should get overridden anyway
                     coremap[i].is_kernel = true;
                     coremap[i].allocated = true;
@@ -166,6 +167,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
                     if (i < end_index)
                         coremap[i].has_next = true;
                     coremap[i].busy = false;
+                    kprintf("done\n");
                 }
                 return CM_TO_PADDR(start_index);
             }
@@ -179,10 +181,6 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
     int cm_index;
     // int bs_index;
     bool has_next = true;
-
-    for (unsigned i = 0; i < 1024; i++) {
-        ((unsigned*)paddr)[i] = 0xDEA110C1;
-    }
 
     cm_index = PADDR_TO_CM(paddr);
 
@@ -210,7 +208,7 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
             // bs_dealloc_index(bs_index);
         }
 
-        CM_DEBUG("deallocating (cm_entry) %d from (addrspace) %p\n", cm_index, as);
+        CM_DEBUG("deallocating (cm_entry) %d from (addrspace) %p...", cm_index, as);
         coremap[cm_index].allocated     = 0;
         coremap[cm_index].vm_addr       = 0;
         coremap[cm_index].is_kernel     = 0;
@@ -220,6 +218,7 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         coremap[cm_index].dirty         = 0;
         coremap[cm_index].pid           = 0;
         coremap[cm_index].as            = 0;
+        kprintf("done\n");
 
         // The pagetable entry should be gone...nevermind, we need the backing store index
         //if (as != NULL) {

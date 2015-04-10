@@ -45,6 +45,10 @@ void free_kpages(vaddr_t addr)
 	// TEMP For debugging purposes. Try not to forget to delete this
     memset((void*)addr, 0x47, 4096);
 
+    for (unsigned i = 0; i < 1024; i++) {
+        ((unsigned*)addr)[i] = 0xDEA110C1;
+    }
+
 	paddr_t paddr = KVADDR_TO_PADDR(addr);
 	cm_dealloc_page(NULL, paddr);
 }
@@ -101,12 +105,14 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 
 	// If we have reached this point, the process has access to the faulting address
 
-	pt_entry = pt_get_entry(curproc->p_addrspace, faultaddress);
+	struct addrspace* as = curproc->p_addrspace;
+
+	pt_entry = pt_get_entry(as, faultaddress);
 
 	// Check if the page containing the address has been allocated.
 	// If not, we will allocate the page and let the switch block handle tlb loading
 	if (!pt_entry || !pt_entry->allocated) {
-		pt_entry = pt_alloc_page(curproc->p_addrspace, faultaddress & PAGE_MASK);
+		pt_entry = pt_alloc_page(as, faultaddress & PAGE_MASK);
 	}
 
 	lock_acquire(pt_entry->lk);
@@ -115,7 +121,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 	if (pt_entry->p_addr == 0) {
 		KASSERT(pt_entry->store_index != 0);
 		KASSERT(faulttype != VM_FAULT_READONLY);
-		cm_load_page(curproc->p_addrspace, faultaddress & PAGE_MASK);
+		cm_load_page(as, faultaddress & PAGE_MASK);
 	}
 
 	// All the above checks *should* mean it's safe to just load it in
