@@ -29,17 +29,20 @@ struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
 	uint32_t index_hi = v_addr >> 22;
 
 	// Check that the L2 pagetable exists, creating if it doesn't
+	lock_acquire(as->pt_locks[index_hi]);
 	if (as->pagetable[index_hi] == NULL) {
 		as->pagetable[index_hi] = kmalloc(PT_LEVEL_SIZE * sizeof(struct pt_entry));
 		memset(as->pagetable[index_hi], 0, PT_LEVEL_SIZE * sizeof(struct pt_entry));
 	}
 
 	struct pt_entry *entry = pt_get_entry(as, v_addr);
+
 	entry->store_index = bs_alloc_index();
 	entry->in_memory = true;
 	entry->allocated = true;
+	entry->lk = as->pt_locks[index_hi];
 	entry->p_addr = cm_alloc_page(as, v_addr);
-	entry->lk = lock_create("pt");
+	lock_release(as->pt_locks[index_hi]);
 
 	kprintf("done\n");
 
@@ -60,7 +63,6 @@ void pt_dealloc_page(struct addrspace *as, vaddr_t v_addr) {
 	entry->allocated = 0;
 
 	lock_release(entry->lk);
-	lock_destroy(entry->lk);
 }
 
 /*
@@ -70,15 +72,24 @@ void pt_dealloc_page(struct addrspace *as, vaddr_t v_addr) {
 struct pt_entry* pt_get_entry(struct addrspace *as, vaddr_t v_addr) {
 	uint32_t index_hi = v_addr >> 22;
 	uint32_t index_lo = v_addr >> 12 & 0x000003FF;
+	int i_hold;
+
+	// Check if we already hold the lock. In some cases, caller needs to have
+	//  the lock. In other cases they shouldn't. We don't care here, we just
+	//  need to make sure it's synchronized.
+	i_hold = lock_do_i_hold(as->pt_locks[index_hi]);
 
 	// Check to make sure the second level pagetable exists
+	if (!i_hold)
+		lock_acquire(as->pt_locks[index_hi]);
 	if (as->pagetable[index_hi] == NULL) {
+		lock_release(as->pt_locks[index_hi]);
 		return NULL;
 	}
-
-	
-
-	return &as->pagetable[index_hi][index_lo];
+	struct pt_entry *entry = &as->pagetable[index_hi][index_lo];
+	if (!i_hold)
+		lock_release(as->pt_locks[index_hi]);
+	return entry;
 }
 
 /* Destroy all entries in the page table. 

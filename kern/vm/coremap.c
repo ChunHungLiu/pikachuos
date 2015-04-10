@@ -15,6 +15,8 @@
 #include <kern/fcntl.h>
 #include <stat.h>
 
+#include <cpu.h>
+
 //#define CM_DEBUG(message...) kprintf("cm: ");kprintf(message);
 #define CM_DEBUG(message...) ;
 #define CM_DONE (void)0;
@@ -111,7 +113,7 @@ paddr_t cm_load_page(struct addrspace *as, vaddr_t va) {
  * Notes:
  *  a NULL address space indicates that this is a kernel page
  */
-paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va) {
+paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va, ...) {
     KASSERT(va != 0);
     // TODO: design choice here, everything needs to be passed down
     int cm_index;
@@ -318,11 +320,16 @@ static int cm_do_evict(int cm_index) {
     KASSERT(pte != NULL);
 
     // TODO: possible deadlock bug
-    lock_acquire(pte->lk);
+    //  If we currently hold the lock, we will assume that the caller is properly synchronized. 
+    int i_hold = lock_do_i_hold(pte->lk);
+
+    if (!i_hold)
+        lock_acquire(pte->lk);
     pte->in_memory = 0;
     // Shoot down this entry
     //vm_tlbshootdown_all();
-    lock_release(pte->lk);
+    if (!i_hold)
+        lock_release(pte->lk);
 
     coremap[cm_index].allocated = 0;
     
@@ -465,15 +472,14 @@ int bs_write_out(int cm_index) {
     struct addrspace *as = coremap[cm_index].as;
     vaddr_t va = coremap[cm_index].vm_addr;
     struct pt_entry *pte = pt_get_entry(as, va);
-    int spl;
 
     // TODO: error checking
-    spl = splhigh();
+    lock_acquire(bs_map_lock);
     offset = pte->store_index;
     kprintf("bs: writing page (paddr) %x to disk at (offset) %d...", paddr, offset);
     err = bs_write_page((void *) PADDR_TO_KVADDR(paddr), offset);
     kprintf("done\n");
-    splx(spl);
+    lock_release(bs_map_lock);
 
     return err;
 }

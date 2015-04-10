@@ -57,7 +57,7 @@ int cm_evict_page(void);
  * Allocate a page of memory, pointing back to the virtual address in the
  * address space that references it
  */
-paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va);
+paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va, ...);
 
 /* Find a contiguous npages of memory */
 paddr_t cm_alloc_npages(unsigned npages);

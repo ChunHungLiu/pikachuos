@@ -65,7 +65,7 @@ struct addrspace {
         size_t as_npages2;
         paddr_t as_stackpbase;
 #else
-        struct lock *pt_lock;
+        struct lock **pt_locks;
         struct pt_entry** pagetable;
         struct array *as_regions;
         vaddr_t heap_start;
