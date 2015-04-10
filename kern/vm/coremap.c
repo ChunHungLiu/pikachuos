@@ -55,7 +55,7 @@ static unsigned evict_hand = 0;
 static unsigned mem_free;
 static struct lock *mem_free_lock;
 
-static int cm_do_evict(int cm_index);
+static int cm_do_evict(int cm_index, struct addrspace* as, vaddr_t va);
 
 struct vnode *bs_file;
 struct bitmap *bs_map;
@@ -150,7 +150,7 @@ int cm_alloc_entry(struct addrspace *as, vaddr_t vaddr, bool busy) {
     // We don't have any free page any more, needs to evict.
     if (cm_index < 0) {
         // Do page eviction
-        cm_index = cm_evict_page();
+        cm_index = cm_evict_page(as, vaddr);
     }
 
     // cm_index should be a valid page index at this point
@@ -243,7 +243,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
                     // We may need to page out user pages to make space for our kernel
                     if (coremap[i].allocated) {
                         KASSERT(coremap[i].busy);
-                        cm_do_evict(i);
+                        cm_do_evict(i, NULL, coremap[i].vm_addr);
                         KASSERT(!coremap[i].allocated);
                     }
                     spinlock_acquire(&busy_lock);
@@ -417,7 +417,7 @@ int cm_get_free_page(void) {
  * @param cm_index The index of the coremap entry to evict
  * @return The index of the page that was evicted
  */
-static int cm_do_evict(int cm_index) {
+static int cm_do_evict(int cm_index, struct addrspace *old_as, vaddr_t old_va) {
     // The entry we are evicting should already be set busy by the caller
     KASSERT(coremap[cm_index].busy);
     KASSERT(coremap[cm_index].allocated);
@@ -433,7 +433,24 @@ static int cm_do_evict(int cm_index) {
     if (locked)
         KASSERT(lock_do_i_hold(as->pt_locks[vaddr >> 22]));
 
-    if (!locked) pte_lock(as, vaddr);
+    if (!locked) {
+        // pte_lock(as, vaddr);
+        // To avoid deadlock, acquire AS locks in order of raw pointer value
+        if (old_as != NULL) {
+            // user
+            if ((int)old_as < (int)as){
+                pte_unlock(old_as, old_va);
+                pte_lock(as, vaddr);
+                pte_lock(old_as, old_va);
+            } else {
+                pte_lock(as, vaddr);
+            }
+        } else {
+            // kernel
+            pte_lock(as, vaddr);
+        }
+    }
+        
 
     // Pagetable entries can dissappear between the call to cm_do_evict and now. In that case, we don't have to do any work
     struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
@@ -480,12 +497,12 @@ static int cm_do_evict(int cm_index) {
  *          evict a page to ensure this
  * @return An unused coremap entry
  */
-int cm_evict_page(){
+int cm_evict_page(struct addrspace *as, vaddr_t va){
     int cm_index;
 
     cm_index = cm_choose_evict_page();
 
-    return cm_do_evict(cm_index);
+    return cm_do_evict(cm_index, as, va);
 }
 
 // NOT COMPLETE

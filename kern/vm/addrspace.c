@@ -219,6 +219,7 @@ as_deactivate(void)
 	 * anything. See proc.c for an explanation of why it (might)
 	 * be needed.
 	 */
+	 vm_tlbflush_all();
 }
 
 /*

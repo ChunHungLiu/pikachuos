@@ -130,7 +130,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 
     // The page has been allocated. Check if it is in physical memory.
     if (!pt_entry->in_memory) {
-        KASSERT(faulttype != VM_FAULT_READONLY);
+        // KASSERT(faulttype != VM_FAULT_READONLY);
         cm_load_page(as, faultaddress & PAGE_MASK);
     }
 
