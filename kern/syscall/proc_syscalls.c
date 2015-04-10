@@ -171,7 +171,7 @@ int sys_execv(char* progname, char** args, int *retval) {
 	int nargs = 0;
 	userptr_t *usr_argv = NULL;
 	char *kern_progname = kmalloc(PATH_MAX);
-	args_len = kmalloc(sizeof(int) * 1024);
+	args_len = kmalloc(sizeof(int) * ARG_MAX);
 	temp = kmalloc(sizeof(char) * ARG_MAX);
 
 	if (kern_progname == NULL || args_len == NULL || temp == NULL){
@@ -212,7 +212,6 @@ int sys_execv(char* progname, char** args, int *retval) {
 
 	// Go through args and copy everything over to kern_args using copyinstr
 	for (int i = 0; i < nargs; i++) {
-		// This is causing issue
 		kern_args[i] = kmalloc(sizeof(char) * args_len[i]);
 		if (kern_args[i] == NULL) {
 			*retval = -1;

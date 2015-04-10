@@ -82,7 +82,7 @@ struct pt_entry* pt_get_entry(struct addrspace *as, vaddr_t v_addr) {
  * This will free coremap as well
  */
 void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
-	kprintf("pt: pt_destroy (addrspace) %p\n", as);
+	// kprintf("pt: pt_destroy (addrspace) %p\n", as);
     int i, j;
     struct pt_entry entry;
     for (i = 0; i < PT_LEVEL_SIZE; i ++) {
@@ -90,8 +90,8 @@ void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
             for (j = 0; j < PT_LEVEL_SIZE; j ++){
                 entry = pagetable[i][j];
                 if (entry.allocated) {
-                	kprintf("pt: dealloc {paddr: %x, store_index: %x, in_memory: %d, allocated: %d, lock: %p}\n",
-                		entry.p_addr, entry.store_index, entry.in_memory, entry.allocated, entry.lk);
+                	// kprintf("pt: dealloc {paddr: %x, store_index: %x, in_memory: %d, allocated: %d, lock: %p}\n",
+                		// entry.p_addr, entry.store_index, entry.in_memory, entry.allocated, entry.lk);
                     if (entry.in_memory) {
                         pt_dealloc_page(as, (i << 22) | (j << 12));
                     } 
@@ -105,7 +105,7 @@ void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
         kfree(pagetable[i]);
     }
     kfree(pagetable);
-    kprintf("pt: pt_destroy complete\n");
+    // kprintf("pt: pt_destroy complete\n");
 }
 
 /* 
