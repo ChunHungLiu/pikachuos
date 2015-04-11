@@ -66,6 +66,8 @@ void free_kpages(vaddr_t addr);
 void vm_tlbshootdown_all(void);
 void vm_tlbshootdown(const struct tlbshootdown *);
 
-void vm_tlbflush(void);
+/* TLB shootdowns called by ourselves (no synchronization needed) */
+void vm_tlbflush_all(void);
+void vm_tlbflush(vaddr_t target);
 
 #endif /* _VM_H_ */

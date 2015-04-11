@@ -350,6 +350,7 @@ bool cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
 
         KASSERT(coremap[cm_index].busy);
 
+        bzero((void *)PADDR_TO_KVADDR(paddr), PAGE_SIZE);
         CM_DEBUG("deallocating (cm_entry) %d from (addrspace) %p...", cm_index, as);
         coremap[cm_index].allocated     = 0;
         coremap[cm_index].vm_addr       = 0;
@@ -434,6 +435,12 @@ static int cm_do_evict(int cm_index) {
 
     if (!locked) pte_lock(as, vaddr);
 
+    // Pagetable entries can dissappear between the call to cm_do_evict and now. In that case, we don't have to do any work
+    struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
+    if (pt_entry == NULL || !pt_entry->allocated)
+        return cm_index;
+
+
     // We invalidate the virtual address on all cpus before we touch the pagetable entry
     ipi_tlbshootdown_allcpus(&(const struct tlbshootdown){vaddr, sem_create("Shootdown", 0)});
 
@@ -446,8 +453,7 @@ static int cm_do_evict(int cm_index) {
         coremap[cm_index].dirty = 0;
     }
 
-    // Get the pagetable entry and set it to not be in memory
-    struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
+    // Set the pagetable entry to not be in memory
     KASSERT(pt_entry != NULL);
     pt_entry->in_memory = 0;
 

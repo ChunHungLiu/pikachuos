@@ -161,6 +161,9 @@ int sys_getpid(pid_t *retval) {
 	return 0;
 }
 
+#undef ARG_MAX
+#define ARG_MAX 4096
+
 int sys_execv(char* progname, char** args, int *retval) {
 	int result;
 	int *args_len;

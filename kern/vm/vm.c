@@ -51,7 +51,7 @@ void vm_tlbshootdown_all(void)
     panic("HELP!!! vm_tlbshootdown_all called");
 }
 
-void vm_tlbflush(void)
+void vm_tlbflush_all(void)
 {
     int spl;
     int i;
@@ -63,18 +63,22 @@ void vm_tlbflush(void)
     splx(spl);
 }
 
-void
-vm_tlbshootdown(const struct tlbshootdown *ts)
-{
+void vm_tlbflush(vaddr_t target) {
     int spl;
     int i;
 
     spl = splhigh();
-    i = tlb_probe(ts->target, 0);
+    i = tlb_probe(target & PAGE_MASK, 0);
     if (i != -1)
         tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-    V(ts->sem);
     splx(spl);
+}
+
+void
+vm_tlbshootdown(const struct tlbshootdown *ts)
+{
+    vm_tlbflush(ts->target);
+    V(ts->sem);
 }
 
 int vm_fault(int faulttype, vaddr_t faultaddress)

@@ -107,16 +107,24 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 			newas->pagetable[i] = kmalloc(PT_LEVEL_SIZE * sizeof(struct pt_entry));
 			memset(newas->pagetable[i], 0, PT_LEVEL_SIZE * sizeof(struct pt_entry));
 			// For each page table entry
+			// Lock the entire L2 pagetable
+			lock_acquire(old->pt_locks[i]);
 			for (j = 0; j < PT_LEVEL_SIZE; j++){
+				// We're about to copy this page. Make sure it can't be written to
+				vm_tlbflush((i << 22) & (j << 12));
+
 				old_entry = &old->pagetable[i][j];
 				new_entry = &newas->pagetable[i][j];
+
+				// For every valid pagetable entry...
 				if (old_entry->allocated){
 					offset = bs_alloc_index();
 					if (old_entry->in_memory){
+						// Write it to disk if it's in memory
 						retval = bs_write_page((void *) PADDR_TO_KVADDR(old_entry->p_addr), offset);
 						KASSERT(retval == 0);					
 					} else {
-						// Make a temporary buffer and move the page in disk
+						// Or copy it to the new disk spot if not
 						retval = bs_read_page(buffer, old_entry->store_index);
 						KASSERT(retval == 0);
 
@@ -131,6 +139,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 					new_entry->allocated = true;
 				}
 			}
+			lock_release(old->pt_locks[i]);
 		}
 	}
 	kfree(buffer);
@@ -199,7 +208,7 @@ as_activate(void)
 
 	// Context switch happens, shootdown everything
 	// ipi_tlbshootdown_allcpus(&(const struct tlbshootdown){vaddr, sem_create("Shootdown", 0)});
-	vm_tlbflush();
+	vm_tlbflush_all();
 }
 
 void
