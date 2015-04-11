@@ -16,29 +16,33 @@
 
 #define VM_STACKPAGES 18
 
+//#define SBRK_DEBUG(message...) kprintf("sbrk: ");kprintf(message);
+#define SBRK_DEBUG(message...) ;
+#define SBRK_DONE (void)0;
+
 int
 sys_sbrk(int amount, int *retval) {
     struct addrspace *as = curproc->p_addrspace;
-    kprintf("sbrk: amount = %d, free = %d\n", amount, cm_mem_free());
+    SBRK_DEBUG("amount = %d, free = %d\n", amount, cm_mem_free());
 
     *retval = as->heap_end;
 
     if (amount > (int) cm_mem_free()) {
-        kprintf("sbrk: no memory\n");
+        SBRK_DEBUG("no memory\n");
         return ENOMEM;
     }
 
     if (as->heap_end + amount < as->heap_start) {
-        kprintf("sbrk: negative heap size\n");
+        SBRK_DEBUG("negative heap size\n");
         return EINVAL;
     }
 
-    kprintf("sbrk: new heap_end = %x, stack top = %x\n", as->heap_end + amount, USERSTACK - VM_STACKPAGES * PAGE_SIZE);
+    SBRK_DEBUG("new heap_end = %x, stack top = %x\n", as->heap_end + amount, USERSTACK - VM_STACKPAGES * PAGE_SIZE);
     if (as->heap_end + amount < USERSTACK - VM_STACKPAGES * PAGE_SIZE) {
         cm_mem_change(-amount);
         as->heap_end += amount;
         return 0;
     }
 
-    panic("la de da de da");
+    panic("sbrk not handled");
 }

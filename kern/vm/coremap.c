@@ -21,6 +21,10 @@
 #define CM_DEBUG(message...) ;
 #define CM_DONE (void)0;
 
+//#define BS_DEBUG(message...) kprintf("bs: ");kprintf(message);
+#define BS_DEBUG(message...) ;
+#define BS_DONE (void)0;
+
 #define PAGE_RANDOM
 
 #define CM_TO_PADDR(i) ((paddr_t)PAGE_SIZE * (i + cm_base))
@@ -476,9 +480,9 @@ int bs_write_out(int cm_index) {
     // TODO: error checking
     lock_acquire(bs_map_lock);
     offset = pte->store_index;
-    kprintf("bs: writing page (paddr) %x to disk at (offset) %d...", paddr, offset);
+    BS_DEBUG("writing page (paddr) %x to disk at (offset) %d...", paddr, offset);
     err = bs_write_page((void *) PADDR_TO_KVADDR(paddr), offset);
-    kprintf("done\n");
+    BS_DONE;
     lock_release(bs_map_lock);
 
     return err;

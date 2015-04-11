@@ -25,7 +25,7 @@ struct pt_entry** pagetable_create() {
  * to each other) and in memory.
  */
 struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
-	kprintf("pt: Allocating %x...", v_addr);
+	//kprintf("pt: Allocating %x...", v_addr);
 	uint32_t index_hi = v_addr >> 22;
 
 	// Check that the L2 pagetable exists, creating if it doesn't
@@ -44,7 +44,7 @@ struct pt_entry* pt_alloc_page(struct addrspace *as, vaddr_t v_addr) {
 	entry->p_addr = cm_alloc_page(as, v_addr);
 	lock_release(as->pt_locks[index_hi]);
 
-	kprintf("done\n");
+	//kprintf("done\n");
 
 	return entry;
 }
