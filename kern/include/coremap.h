@@ -65,7 +65,7 @@ paddr_t cm_alloc_npages(unsigned npages);
 /* 
  * Deallocates a page of memory specified by the physical address
  */
-void cm_dealloc_page(struct addrspace *as, paddr_t paddr);
+bool cm_dealloc_page(struct addrspace *as, paddr_t paddr);
 
 /* Load page from the backing store into a specific page of physical memory (used as a helper function for page_load) */
 paddr_t cm_load_page(struct addrspace *as, vaddr_t va);

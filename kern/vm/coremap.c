@@ -112,7 +112,7 @@ void cm_bootstrap(void) {
 
 	cm_entries = (mem_end - mem_start) / PAGE_SIZE;
 	cm_base = mem_start / PAGE_SIZE;
-    cm_used = 1;
+    cm_used = 0;
 
     // TODO: Can be replaced with memset
 	for (i = 0; i < (int)cm_entries; i++) {
@@ -188,6 +188,7 @@ paddr_t cm_load_page(struct addrspace *as, vaddr_t vaddr) {
     int cm_index = cm_alloc_entry(as, vaddr, true);
 
     KASSERT(coremap[cm_index].busy);
+    KASSERT(coremap[cm_index].allocated);
 
     // Should be locked. Get the pagetable entry and read in
     KASSERT(pte_locked(as, vaddr));
@@ -214,20 +215,24 @@ paddr_t cm_load_page(struct addrspace *as, vaddr_t vaddr) {
 paddr_t cm_alloc_npages(unsigned npages) {
     // This should be the kernel calling this. Can we check this
     unsigned start_index = 0, end_index = 0;
+    //spinlock_acquire(&busy_lock);
     for (end_index = 0; end_index < cm_entries; end_index++) {
         spinlock_acquire(&busy_lock);
         if (coremap[end_index].busy || coremap[end_index].is_kernel) {
-            spinlock_release(&busy_lock);
             // Entry busy or can't be moved. Give up and restart the contiguous region
             // Set the pages we had reserved to not busy
-            for (; start_index < end_index; start_index++)
+            for (; start_index < end_index; start_index++) {
+                KASSERT(coremap[start_index].busy);
                 coremap[start_index].busy = false;
+            }
+            spinlock_release(&busy_lock);
             KASSERT(start_index == end_index);
             // start_index should point to the start of a potentially free region
             start_index++;
             continue;
         } else {
             // This page is free!!! Reserve it
+            KASSERT(!coremap[end_index].busy);
             coremap[end_index].busy = true;
             spinlock_release(&busy_lock);
             // Check if we are done
@@ -241,6 +246,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
                         cm_do_evict(i);
                         KASSERT(!coremap[i].allocated);
                     }
+                    spinlock_acquire(&busy_lock);
                     CM_DEBUG("allocating (cm_entry) %d to kernel...", i);
                     coremap[i].vm_addr = CM_TO_PADDR(i);  // TODO TEMP: for debugging. Should get overridden anyway
                     coremap[i].is_kernel = true;
@@ -250,19 +256,39 @@ paddr_t cm_alloc_npages(unsigned npages) {
                         coremap[i].has_next = true;
                     KASSERT(coremap[i].busy);
                     coremap[i].busy = false;
+                    spinlock_release(&busy_lock);
                     CM_DONE;
                 }
 
                 cm_used_change(npages);
 
+                //spinlock_release(&busy_lock);
                 return CM_TO_PADDR(start_index);
             }
         }
         // TEST
         //KASSERT(!spinlock_do_i_hold(&busy_lock)); // Seems to be hanging on this
     }
+    //spinlock_release(&busy_lock);
     return 0;
 }
+
+/*static void cm_wait_for(int cm_index) {
+    for (unsigned i = 0; i < 1000; i++) {
+        spinlock_acquire(&busy_lock);
+        if (!coremap[cm_index].busy) {
+            coremap[cm_index].busy = true;
+            spinlock_release(&busy_lock);
+            return;
+        } else {
+            spinlock_release(&busy_lock);
+            CM_DEBUG("waiting on (cm_entry) %d\n", cm_index);
+            thread_yield();
+        }
+    }
+    coremap[cm_index].busy = true;
+    CM_DEBUG("!!!!!!!!!! Fuck it. Page (cm_entry) %d is still busy. I give up !!!!!!!!!!\n", cm_index);
+}*/
 
 /**
  * @brief Dellocates a page with a given physical address from the address space
@@ -273,7 +299,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
  * @param addrspace Target address space
  * @param paddr The physical address to deallocate
  */
-void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
+bool cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
     int cm_index;
     int bs_index;
     bool has_next = true;
@@ -283,8 +309,12 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
     // Loop until all pages in a multipage chain are deallocated
     while (has_next) {
 
-        // Lock the coremap entry
+        // Lock the coremap entry, or give up if we can't
         spinlock_acquire(&busy_lock);
+        if (coremap[cm_index].busy) {
+            spinlock_release(&busy_lock);
+            return false;
+        }
         coremap[cm_index].busy = true;
         spinlock_release(&busy_lock);
 
@@ -336,6 +366,7 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         coremap[cm_index].busy = false;
         cm_index++;
     }
+    return true;
 }
 
 /**
@@ -345,7 +376,7 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
  * @return The index of an unsed coremap entry, or -1 if none exist
  */
 int cm_get_free_page(void) {
-    unsigned i;
+    int i;
 
     // We should not be using more page table entries than exist
     KASSERT(cm_entries >= cm_used);
@@ -356,7 +387,9 @@ int cm_get_free_page(void) {
     }
 
     // Linearly probe for a free entry and mark it as busy
-    for (i = 0; i < cm_entries; i++){
+    // Start from end to reduce kernel/user contention
+    //for (i = cm_entries - 1; i > 0; i--) {
+    for (i = 0; i < (int)cm_entries; i++) {
         spinlock_acquire(&busy_lock);
         if (!coremap[i].allocated && !coremap[i].busy) {
             coremap[i].busy = true;
@@ -367,7 +400,11 @@ int cm_get_free_page(void) {
     }
 
     // Either cm_used = cm_entries, or there was a free space
-    KASSERT(false);
+    //KASSERT(false);
+    // The previous assertion is not correct. The state of the coremap could
+    //  have changed between our (cm_entries == cm_used) check and our linear
+    //  probe. A page may have been taken by another processor
+    return -1;
 }
 
 /**
@@ -448,18 +485,19 @@ int cm_evict_page(){
 // NOT COMPLETE
 /* Evict the "next" page from memory. This will be dependent on the 
 eviction policy that we choose (clock, random, etc.). This is 
-where we will switch out different eviction policies */
+where we will switch out different eviction policies. The resulting
+page should not be busy, a kernel page, or unallocated */
 #ifdef PAGE_LINEAR
 int cm_choose_evict_page() {
     int i = 0;
     while (true) {
         spinlock_acquire(&busy_lock);
-        if (coremap[i].busy || coremap[i].is_kernel){
+        if (coremap[i].busy || coremap[i].is_kernel || !coremap[i].allocated){
             spinlock_release(&busy_lock);
             i = (i + 1) % cm_entries;
             continue;
         } else {
-            CM_SET_BUSY(coremap[i]);
+            coremap[i].busy = true;
             KASSERT(coremap[i].busy);
             spinlock_release(&busy_lock);
             return i;
@@ -471,12 +509,12 @@ int cm_choose_evict_page() {
     int i = random() % cm_entries;
     while (true) {
         spinlock_acquire(&busy_lock);
-        if (coremap[i].busy || coremap[i].is_kernel){
+        if (coremap[i].busy || coremap[i].is_kernel || !coremap[i].allocated){
             spinlock_release(&busy_lock);
             i = (i + 1) % cm_entries;
             continue;
         } else {
-            CM_SET_BUSY(coremap[i]);
+            coremap[i].busy = true;
             KASSERT(coremap[i].busy);
             spinlock_release(&busy_lock);
             return i;
@@ -487,7 +525,7 @@ int cm_choose_evict_page() {
 int cm_choose_evict_page() {
     while (true) {
         spinlock_acquire(&busy_lock);
-        if (coremap[i].busy || coremap[i].is_kernel || coremap[i].used_recently){
+        if (coremap[i].busy || coremap[i].is_kernel || !coremap[i].allocated || coremap[i].used_recently){
             spinlock_release(&busy_lock);
             if (coremap[i].used_recently) {
                 coremap[i].used_recently = false;
@@ -495,7 +533,7 @@ int cm_choose_evict_page() {
             evict_hand = (evict_hand + 1) % cm_entries;
             continue;
         } else {
-            CM_SET_BUSY(coremap[i]);
+            coremap[i].busy = true;
             spinlock_release(&busy_lock);
             return i;
         }

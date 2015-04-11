@@ -112,9 +112,29 @@ void pt_dealloc_page(struct addrspace *as, vaddr_t vaddr) {
 
 	struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
 
-	// If in memory, deallocated that segment
-	if (pt_entry->in_memory)
-		cm_dealloc_page(NULL, pt_entry->p_addr);
+	// If in memory, try to deallocate that segment and block until it's gone
+	if (pt_entry->in_memory) {
+		bool success = false;
+		while (true) {
+			// Try to deallocate the page in the coremap. This might fail if the coremap is busy
+			success = cm_dealloc_page(NULL, pt_entry->p_addr);
+
+			// Yay! Freed!
+			if (success)
+				break;
+
+			// The coremap is busy (are there other cases?). We unlock the pagetable entry so that other processes can use it
+			pte_unlock(as, vaddr);
+			thread_yield();
+			pte_lock(as, vaddr);
+
+			// The conditions under which we should be running might have changed. Check them again
+			if (!pt_entry->in_memory)
+				break;
+
+			PT_DEBUG("retry deallocating (vaddr) %x\n", vaddr);
+		}
+	}
 
 	pt_entry->p_addr = 0;
 	pt_entry->store_index = 0;
