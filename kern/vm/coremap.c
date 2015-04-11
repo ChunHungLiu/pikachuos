@@ -308,7 +308,6 @@ paddr_t cm_alloc_npages(unsigned npages) {
  */
 bool cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
     int cm_index;
-    int bs_index;
     bool has_next = true;
 
     cm_index = PADDR_TO_CM(paddr);
@@ -337,14 +336,6 @@ bool cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         KASSERT(coremap[cm_index].busy);
 
         // If this is not the kernel, set this to 'free' in the backing store
-        if (as != NULL) {
-            pte_lock(as, coremap[cm_index].vm_addr);
-            struct pt_entry* pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
-            bs_index = pt_entry->store_index;
-            bs_dealloc_index(bs_index);
-            pt_entry->store_index = 0;
-            pte_unlock(as, coremap[cm_index].vm_addr);
-        }
 
         KASSERT(coremap[cm_index].busy);
 

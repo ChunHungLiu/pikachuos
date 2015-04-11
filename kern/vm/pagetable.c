@@ -118,6 +118,7 @@ void pt_dealloc_page(struct addrspace *as, vaddr_t vaddr) {
 		while (true) {
 			// Try to deallocate the page in the coremap. This might fail if the coremap is busy
 			success = cm_dealloc_page(NULL, pt_entry->p_addr);
+			KASSERT(pte_locked(as, vaddr));
 
 			// Yay! Freed!
 			if (success)
@@ -136,6 +137,7 @@ void pt_dealloc_page(struct addrspace *as, vaddr_t vaddr) {
 		}
 	}
 
+	bs_dealloc_index(pt_entry->store_index);
 	pt_entry->p_addr = 0;
 	pt_entry->store_index = 0;
 	pt_entry->in_memory = 0;
