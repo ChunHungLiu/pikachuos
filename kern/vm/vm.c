@@ -107,6 +107,14 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 
     struct addrspace* as = curproc->p_addrspace;
 
+    // Create L2 lock if necessary
+    int index_hi = faultaddress >> 22;
+    if (as->pagetable[index_hi] == NULL) {
+        as->pt_locks[index_hi] = lock_create("pt");
+        as->pagetable[index_hi] = kmalloc(PT_LEVEL_SIZE * sizeof(struct pt_entry));
+        memset(as->pagetable[index_hi], 0, PT_LEVEL_SIZE * sizeof(struct pt_entry));
+    }
+
     // Lock pagetable entry
     pte_lock(as, faultaddress);
     pt_entry = pt_get_entry(as, faultaddress);

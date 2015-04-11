@@ -57,9 +57,8 @@ as_create(void)
 	 * Initialize as needed.
 	 */
 	as->pt_locks = kmalloc(PT_LEVEL_SIZE * sizeof(struct lock*));
-	for (int i = 0; i < PT_LEVEL_SIZE; i++) {
-		as->pt_locks[i] = lock_create("");
-	}
+	for (int i = 0; i < PT_LEVEL_SIZE; i++)
+		as->pt_locks[i] = NULL;
 	as->pagetable = pagetable_create();
 	
 	// TODO: error checking and clean up here
@@ -170,7 +169,8 @@ as_destroy(struct addrspace *as)
     struct region *region_ptr;
 
     for (i = 0; i < PT_LEVEL_SIZE; i++) {
-    	lock_destroy(as->pt_locks[i]);
+    	if (as->pt_locks[i])
+	    	lock_destroy(as->pt_locks[i]);
     }
     
     len = array_num(as->as_regions);
