@@ -17,13 +17,24 @@
 
 #include <cpu.h>
 
-//#define CM_DEBUG(message...) kprintf("cm: ");kprintf(message);
-#define CM_DEBUG(message...) ;
-#define CM_DONE (void)0;
+#define DEBUG_CM
+//#define DEBUG_BS
 
-//#define BS_DEBUG(message...) kprintf("bs: ");kprintf(message);
+#ifdef DEBUG_CM
+#define CM_DEBUG(message...) kprintf("cm: ");kprintf(message);
+#define CM_DONE kprintf("done\n");
+#else
+#define CM_DEBUG(message...) ;
+#define CM_DONE ;
+#endif
+
+#ifdef DEBUG_BS
+#define BS_DEBUG(message...) kprintf("bs: ");kprintf(message);
+#define BS_DONE kprintf("done\n");
+#else
 #define BS_DEBUG(message...) ;
 #define BS_DONE (void)0;
+#endif
 
 #define PAGE_RANDOM
 
@@ -50,11 +61,31 @@ struct vnode *bs_file;
 struct bitmap *bs_map;
 struct lock *bs_map_lock;
 
+void cm_used_change(int amount) {
+    spinlock_acquire(&cm_used_lock);
+    cm_used += amount;
+    spinlock_release(&cm_used_lock);
+}
+
+void cm_mem_change(int amount) {
+    lock_acquire(mem_free_lock);
+    mem_free += amount;
+    lock_release(mem_free_lock);
+}
+
+unsigned cm_mem_free() {
+    lock_acquire(mem_free_lock);
+    int ret = mem_free;
+    lock_release(mem_free_lock);
+    return ret;
+}
+
+int cm_alloc_entry(struct addrspace *as, vaddr_t vaddr, bool busy);
+
 void cm_bootstrap(void) {
 	int i;
     paddr_t mem_start, mem_end;
     uint32_t npages, cm_size;
-    (void) &busy_lock;
     (void) evict_hand;
 
     // get size of memory
@@ -75,7 +106,7 @@ void cm_bootstrap(void) {
 
     coremap = (struct cm_entry *) PADDR_TO_KVADDR(mem_start);
 
-	// this is kinda strange, we may end up having unused cormap space.
+	// We may end up having unused cormap space.
 	ram_stealmem(cm_size / PAGE_SIZE);
     mem_start += cm_size;
 
@@ -84,7 +115,7 @@ void cm_bootstrap(void) {
     cm_used = 0;
 
     // TODO: Can be replaced with memset
-	for (i=0; i<(int)cm_entries; i++) {
+	for (i = 0; i < (int)cm_entries; i++) {
         coremap[i].vm_addr = 0;
         coremap[i].busy = 0;
         coremap[i].is_kernel = 0;
@@ -94,35 +125,26 @@ void cm_bootstrap(void) {
         coremap[i].used_recently = 0;
         coremap[i].as = NULL;    
     }
-
-    // Initialize lock on the number of used entries
-    //cm_used_lock = lock_create("Used coremap lock");
 }
 
-/* Load page from back store to memory. May call page_evict_any if there’s no more physical memory. See Paging for more details. */
-paddr_t cm_load_page(struct addrspace *as, vaddr_t va) {
-    // Code goes here
-    // Basically do cm_alloc_page and then load
-    // TODO: bs_read_in should happen here
-    (void) as;
-    (void) va;
-    // paddr_t pa;
-    // pa = cm_alloc_page(as, va);
-    // bs_read_in();
-
-    return 0;
-}
-
-/* 
- * Notes:
- *  a NULL address space indicates that this is a kernel page
+/**
+ * @brief Allocates a coremap entry to the given address space with the provided
+ *        virtual address
+ * @details This will get a free coremap entry (evicting if necessary) and mark 
+ *          that entry as used
+ * 
+ * @param addrspace Address space to assign this entry to
+ * @param vaddr Reverse mapping back to the page table entry refrencing this
+ * @param busy Final busy state of the allocated page
+ * 
+ * @return Returns the index of the entry we just allocated
  */
-paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va, ...) {
-    KASSERT(va != 0);
-    // TODO: design choice here, everything needs to be passed down
+int cm_alloc_entry(struct addrspace *as, vaddr_t vaddr, bool busy) {
+    KASSERT(vaddr != 0);
+
     int cm_index;
-    // Try to find a free page. If we have one, it's easy. We probably
-    // want to keep a global cm_free veriable to boost performance
+
+    // Get the index of a free page, or -1 if none are free
     cm_index = cm_get_free_page();
     
     // We don't have any free page any more, needs to evict.
@@ -130,47 +152,69 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va, ...) {
         // Do page eviction
         cm_index = cm_evict_page();
     }
+
     // cm_index should be a valid page index at this point
+
+    // Either cm_get_free_page or cm_evict_page should have set this entry to busy
     KASSERT(coremap[cm_index].busy == true);
+
     // If alread free, this should not be allocated. If evicted, should not be either
     KASSERT(coremap[cm_index].allocated == 0);
+
+    // Mark the entry as allocated
     CM_DEBUG("allocating (cm_entry) %d to (addrspace) %p...", cm_index, as);
     coremap[cm_index].allocated = 1;
 
-    if (as != NULL) {
-        struct pt_entry *pte = pt_get_entry(as, va);
-        if (!pte->in_memory && pte->allocated) {
-            bs_read_in(as, va, cm_index);
-        }
-    }
-    // KASSERT(va != 0);
-    coremap[cm_index].vm_addr = va;
+    // Assignment
+    coremap[cm_index].vm_addr = vaddr;
     coremap[cm_index].as = as;
     coremap[cm_index].is_kernel = (as == NULL);
-    coremap[cm_index].busy = false;
+    coremap[cm_index].busy = busy;
 
-    //if (cm_used_lock) {
-        spinlock_acquire(&cm_used_lock);
-        cm_used++;
-        //kprintf("cm: %d of %d pages used\n", cm_used, cm_entries);
-        spinlock_release(&cm_used_lock);
-    //}
+    // Track the number of used coremap entries
+    cm_used_change(1);
 
     CM_DONE;
+
+    return cm_index;
+}
+
+paddr_t cm_alloc_page(struct addrspace *as, vaddr_t vaddr) {
+    int cm_index = cm_alloc_entry(as, vaddr, false);
     return CM_TO_PADDR(cm_index);
 }
 
-/* Linear probing to find free contiguous pages. We reserve memory and try to
- * grow it. If we encounter a kernel page (can't be moved), then we unreserve
- * the previous pages we had and start over after it. */
-// NOTE: unlike cm_alloc_page, this is ONLY used by the kernel
+paddr_t cm_load_page(struct addrspace *as, vaddr_t vaddr) {
+    int cm_index = cm_alloc_entry(as, vaddr, true);
+
+    // Should be locked. Get the pagetable entry and read in
+    KASSERT(pte_locked(as, vaddr));
+    struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
+    if (!pt_entry->in_memory && pt_entry->allocated) {
+        bs_read_in(as, vaddr, cm_index);
+    }
+
+    coremap[cm_index].busy = false;
+
+    return CM_TO_PADDR(cm_index);
+}
+
+/**
+ * @brief Linear probing to find free contiguous pages. NOTE: Only used by kernel
+ * @details We reserve memory and try to grow it. If we encounter a kernel page
+ *          (can't be moved), then we unreserve the previous pages we had and 
+ *          start over after it.
+ * 
+ * @param npages Numer of pages to allocate
+ * @return A physical address to the start of the first page, or 0 if there is
+ *         no contiguous region of the requested size
+ */
 paddr_t cm_alloc_npages(unsigned npages) {
     // This should be the kernel calling this. Can we check this
     unsigned start_index = 0, end_index = 0;
     for (end_index = 0; end_index < cm_entries; end_index++) {
         spinlock_acquire(&busy_lock);
-        if (coremap[end_index].busy ||
-            coremap[end_index].is_kernel) {
+        if (coremap[end_index].busy || coremap[end_index].is_kernel) {
             spinlock_release(&busy_lock);
             // Entry busy or can't be moved. Give up and restart the contiguous region
             // Set the pages we had reserved to not busy
@@ -198,30 +242,36 @@ paddr_t cm_alloc_npages(unsigned npages) {
                     coremap[i].vm_addr = CM_TO_PADDR(i);  // TODO TEMP: for debugging. Should get overridden anyway
                     coremap[i].is_kernel = true;
                     coremap[i].allocated = true;
-                    // Can't be set after we set busy to false
+                    // Can't be set after we set busy to false, so we need some dirty logic here
                     if (i < end_index)
                         coremap[i].has_next = true;
                     coremap[i].busy = false;
                     CM_DONE;
                 }
 
-                //if (&cm_used_lock) {
-                    spinlock_acquire(&cm_used_lock);
-                    cm_used += npages;
-                    spinlock_release(&cm_used_lock);
-                //}
+                cm_used_change(npages);
 
                 return CM_TO_PADDR(start_index);
             }
         }
+        // TEST
         //KASSERT(!spinlock_do_i_hold(&busy_lock)); // Seems to be hanging on this
     }
     return 0;
 }
 
+/**
+ * @brief Dellocates a page with a given physical address from the address space
+ * @details Free any bitmap indices if the given page is in the backing store,
+ *          update the pagetable entry, zero out the coremap entry, repeat on
+ *          the next coremap entry if this was part of a multi page chain
+ * 
+ * @param addrspace Target address space
+ * @param paddr The physical address to deallocate
+ */
 void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
     int cm_index;
-    // int bs_index;
+    int bs_index;
     bool has_next = true;
 
     cm_index = PADDR_TO_CM(paddr);
@@ -241,13 +291,20 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         }
 
         // If this is not the kernel, set this to 'free' in the backing store
-        // TODO: where should we unset bitmap??
         if (as != NULL) {
-            struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
-            lock_acquire(pt_entry->lk);
-            // bs_index = pt_entry->store_index;
-            lock_release(pt_entry->lk);
-            // bs_dealloc_index(bs_index);
+            pte_lock(as, coremap[cm_index].vm_addr);
+            struct pt_entry* pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
+            bs_index = pt_entry->store_index;
+            bs_dealloc_index(bs_index);
+            pt_entry->store_index = 0;
+            pte_unlock(as, coremap[cm_index].vm_addr);
+        }
+
+        // Fill with something recognizable for debugging purposes
+        if (as == NULL) {
+            for (unsigned i = 0; i < 1024; i++) {
+                ((unsigned*)PADDR_TO_KVADDR(CM_TO_PADDR(cm_index)))[i] = 0xDEA110C1;
+            }
         }
 
         CM_DEBUG("deallocating (cm_entry) %d from (addrspace) %p...", cm_index, as);
@@ -260,35 +317,33 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         coremap[cm_index].dirty         = 0;
         coremap[cm_index].as            = 0;
 
-
-        //if (&cm_used_lock) {
-            spinlock_acquire(&cm_used_lock);
-            cm_used--;
-            spinlock_release(&cm_used_lock);
-        //}
+        cm_used_change(-1);
 
         CM_DONE;
-
-        // The pagetable entry should be gone...nevermind, we need the backing store index
-        if (as != NULL) {
-           struct pt_entry *pt_entry = pt_get_entry(as, coremap[cm_index].vm_addr);
-           KASSERT(pt_entry != NULL);
-           bs_dealloc_index(pt_entry->store_index);
-        }
 
         coremap[cm_index].busy = false;
         cm_index++;
     }
 }
 
-// Returns a index where a page is free
+/**
+ * @brief Gets the index of an unused coremap entry, if one exists
+ * @details Linearly probes the coremap until it finds an unused entry, sets it
+ *          to busy, and returns it
+ * @return The index of an unsed coremap entry, or -1 if none exist
+ */
 int cm_get_free_page(void) {
     unsigned i;
+
+    // We should not be using more page table entries than exist
     KASSERT(cm_entries >= cm_used);
+
+    // Short circuit if we know there are no more entries
     if (cm_entries == cm_used) {
         return -1;
     }
-    // Do we want to use busy_lock here?
+
+    // Linearly probe for a free entry and mark it as busy
     for (i = 0; i < cm_entries; i++){
         spinlock_acquire(&busy_lock);
         if (!coremap[i].allocated) {
@@ -300,70 +355,75 @@ int cm_get_free_page(void) {
     }
 
     // Either cm_used = cm_entries, or there was a free space
-    int index = bs_alloc_index();
-    kprintf("%d\n", index);
     KASSERT(false);
 }
 
-/* Evict a specific page from memory. This is needed for multipage allocation. */
-// Need to sync 2 addrspaces
-// Simply update the pte related to paddr
+/**
+ * @brief Evict a specific page of memory
+ * @details This function writes out the page associated with the coremap if dirty,
+ *          sets the assocated pagetable entry to not be in memory, shoots down
+ *          the associated TLB entry, and sets the coremap to be unused
+ * 
+ * @param cm_index The index of the coremap entry to evict
+ * @return The index of the page that was evicted
+ */
 static int cm_do_evict(int cm_index) {
-    // Use our eviction policy to choose a page to evict
-    // coremap[cm_index] should be busy when this returns
-    // TODO: There's no synchronization at all. 
-    // Write to backing storage no matter what -- Not anymore! We now have dirty bits!
+    // The entry we are evicting should already be set busy by the caller
     KASSERT(coremap[cm_index].busy);
+    KASSERT(coremap[cm_index].allocated);
+
+    struct addrspace* as = coremap[cm_index].as;
+    vaddr_t vaddr = coremap[cm_index].vm_addr;
+    int err = 0;
+    bool locked;
+
+    locked = pte_locked(as, vaddr);
+
+    // If we are already holding a lock, then make sure it's the same as the one that belongs to the pagetable entry we're about to evict
+    if (locked)
+        KASSERT(lock_do_i_hold(as->pt_locks[vaddr >> 22]));
+
+    if (!locked) pte_lock(as, vaddr);
+
+    // If dirty, write the page to disk and set it to clean
     if (coremap[cm_index].dirty) {
-        bs_write_out(cm_index);
+        err = bs_write_out(cm_index);
+        KASSERT(!err);
         coremap[cm_index].dirty = 0;
     }
 
-    // Need to find the pt entry and mark it as not in memory anymore
-    struct pt_entry *pte = pt_get_entry(coremap[cm_index].as, coremap[cm_index].vm_addr);
-    KASSERT(pte != NULL);
+    // We invalidate the virtual address on all cpus before we touch the pagetable entry
+    ipi_tlbshootdown_allcpus(&(const struct tlbshootdown){vaddr, sem_create("Shootdown", 0)});
 
-    // TODO: possible deadlock bug
-    //  If we currently hold the lock, we will assume that the caller is properly synchronized. 
-    int i_hold = lock_do_i_hold(pte->lk);
+    // Get the pagetable entry and set it to not be in memory
+    struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
+    KASSERT(pt_entry != NULL);
+    pt_entry->in_memory = 0;
 
-    if (!i_hold)
-        lock_acquire(pte->lk);
-    pte->in_memory = 0;
-    // Shoot down this entry
-    //vm_tlbshootdown_all();
-    if (!i_hold)
-        lock_release(pte->lk);
+    if (!locked) pte_unlock(as, vaddr);
 
+    // Set this coremap entry to be unused
     coremap[cm_index].allocated = 0;
     
-    spinlock_acquire(&cm_used_lock);
-    cm_used--;
-    spinlock_release(&cm_used_lock);
+    // Track number of used coremap entries
+    cm_used_change(-1);
 
     return cm_index;
 }
 
-/* Evict page from memory. This function will update coremap, write to backstore and update the backing_index entry; */
+/**
+ * @brief Evict some page of memory
+ * @details The function guarantees that it will return the index of an unused
+ *          coremap entry with its busy bit set. This function may have to
+ *          evict a page to ensure this
+ * @return An unused coremap entry
+ */
 int cm_evict_page(){
     int cm_index;
 
     cm_index = cm_choose_evict_page();
 
     return cm_do_evict(cm_index);
-}
-
-void cm_mem_change(int amount) {
-    lock_acquire(mem_free_lock);
-    mem_free += amount;
-    lock_release(mem_free_lock);
-}
-
-unsigned cm_mem_free() {
-    lock_acquire(mem_free_lock);
-    int ret = mem_free;
-    lock_release(mem_free_lock);
-    return ret;
 }
 
 // NOT COMPLETE
@@ -424,9 +484,13 @@ int cm_choose_evict_page() {
 }
 #endif
 
-/* Blocks until a coremap entry can be set as dirty */
-void cm_set_dirty(paddr_t paddr) {
-    // Don't worry about synchronization until we combine the bits with the vm_addr
+/**
+ * @brief Set a page to dirty, ignoring synchronization
+ * @details The only other logic touching the dirty bit should be the evictor and writer
+ * 
+ * @param paddr Physical address to mark as dirty
+ */
+inline void cm_set_dirty(paddr_t paddr) {
     int cm_index = PADDR_TO_CM(paddr);
     coremap[cm_index].dirty = true;
 }
@@ -463,47 +527,58 @@ void bs_bootstrap() {
         panic("bs_bootstrap: couldn't create free memory tracker lock");
 
     bs_alloc_index();
-    lock_acquire(mem_free_lock);
-    mem_free--;
-    lock_release(mem_free_lock);
+    
+    cm_mem_change(-1);
     
     return;
 }
-
+/**
+ * @brief Writes the page referenced by cm_index to disk
+ * @details Assumes that the pagetable entry associated with the coremap entry
+ *          has already been locked. Does not do any updating..
+ * 
+ * @param cm_index Index of the coremap entry to evict
+ * @return Error, if nany
+ */
 int bs_write_out(int cm_index) {
     int err, offset;
     paddr_t paddr = CM_TO_PADDR(cm_index);
     struct addrspace *as = coremap[cm_index].as;
-    vaddr_t va = coremap[cm_index].vm_addr;
-    struct pt_entry *pte = pt_get_entry(as, va);
+    vaddr_t vaddr = coremap[cm_index].vm_addr;
 
-    // TODO: error checking
-    lock_acquire(bs_map_lock);
-    offset = pte->store_index;
+    KASSERT(pte_locked(as, vaddr));
+    struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
+
+    KASSERT(pt_entry->store_index);
+    offset = pt_entry->store_index;
+
     BS_DEBUG("writing page (paddr) %x to disk at (offset) %d...", paddr, offset);
     err = bs_write_page((void *) PADDR_TO_KVADDR(paddr), offset);
     BS_DONE;
-    lock_release(bs_map_lock);
 
     return err;
 }
 
 // Put stuff in dest.
-int bs_read_in(struct addrspace *as, vaddr_t va, int cm_index) {
+// NOTE: assert that we alread have locked the virtual address
+int bs_read_in(struct addrspace *as, vaddr_t vaddr, int cm_index) {
     int err;
     unsigned offset;
     paddr_t paddr = CM_TO_PADDR(cm_index);
-    struct pt_entry *pte = pt_get_entry(as, va);
 
-    // TODO: error checking
+    KASSERT(pte_locked(as, vaddr));
+    struct pt_entry *pte = pt_get_entry(as, vaddr);
+
+    KASSERT(pte->store_index);
     offset = pte->store_index;
-    err = bs_read_page((void *) PADDR_TO_KVADDR(paddr), offset);
-    if (!err){
-        pte->in_memory = 1;
-        pte->p_addr = paddr;
-    }
 
-    return err;
+    err = bs_read_page((void *) PADDR_TO_KVADDR(paddr), offset);
+    if (err)
+        return err;
+
+    pte->in_memory = 1;
+    pte->p_addr = paddr;
+    return 0;
 }
 
 

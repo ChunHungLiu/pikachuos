@@ -93,7 +93,7 @@ int tlb_probe(uint32_t entryhi, uint32_t entrylo);
  * entry into multiple TLB slots.
  */
 #define TLBHI_INVALID(entryno) ((0x80000+(entryno))<<12)
-#define TLBLO_INVALID()        (0)
+#define TLBLO_INVALID()        (0xDEAD1000)
 
 /*
  * Number of TLB entries in the processor.

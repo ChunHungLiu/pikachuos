@@ -58,7 +58,7 @@ as_create(void)
 	 */
 	as->pt_locks = kmalloc(PT_LEVEL_SIZE * sizeof(struct lock*));
 	for (int i = 0; i < PT_LEVEL_SIZE; i++) {
-		as->pt_locks[i] = lock_create("l2 lock");
+		as->pt_locks[i] = lock_create("");
 	}
 	as->pagetable = pagetable_create();
 	
@@ -208,7 +208,8 @@ as_activate(void)
 	}
 
 	// Context switch happens, shootdown everything
-	vm_tlbshootdown_all();
+	// ipi_tlbshootdown_allcpus(&(const struct tlbshootdown){vaddr, sem_create("Shootdown", 0)});
+	vm_tlbflush();
 }
 
 void

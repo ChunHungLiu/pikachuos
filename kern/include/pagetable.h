@@ -24,6 +24,10 @@ struct pt_entry {
     struct lock *lk;		// Get rid of this at some point
 };
 
+struct pt_entry* pte_lock(struct addrspace *as, vaddr_t vaddr);
+struct pt_entry* pte_unlock(struct addrspace *as, vaddr_t vaddr);
+bool pte_locked(struct addrspace *as, vaddr_t vaddr);
+
 /* Create a new page table. The new page table will be associated with an addrspace. */
 struct pt_entry** pagetable_create(void);
 

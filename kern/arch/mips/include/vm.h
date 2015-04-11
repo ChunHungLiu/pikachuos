@@ -30,6 +30,7 @@
 #ifndef _MIPS_VM_H_
 #define _MIPS_VM_H_
 
+#include <synch.h>
 
 /*
  * Machine-dependent VM system definitions.
@@ -122,6 +123,7 @@ struct tlbshootdown {
 	 * Change this to what you need for your VM design.
 	 */
 	vaddr_t target;
+	struct semaphore *sem;
 };
 
 #define TLBSHOOTDOWN_MAX 16

@@ -67,13 +67,14 @@ struct wchan {
 /* Master array of CPUs. */
 DECLARRAY(cpu, static __UNUSED inline);
 DEFARRAY(cpu, static __UNUSED inline);
-static struct cpuarray allcpus;
 
 /* Array of all wchans (for debugging purposes) */
 DECLARRAY(wchan, static __UNUSED inline);
 DEFARRAY(wchan, static __UNUSED inline);
 static struct spinlock allwchans_lock;
 static struct wchanarray allwchans;
+
+struct cpuarray allcpus;
 
 /* Used to wait for secondary CPUs to come online. */
 static struct semaphore *cpu_startup_sem;
@@ -1276,6 +1277,23 @@ ipi_broadcast(int code)
 			ipi_send(c, code);
 		}
 	}
+}
+
+void
+ipi_tlbshootdown_allcpus(const struct tlbshootdown *mapping)
+{
+	struct cpu *c;
+	unsigned i, numcpus;
+
+	numcpus = cpuarray_num(&allcpus);
+	for (i = 0; i < numcpus; i++) {
+		c = cpuarray_get(&allcpus, i);
+		ipi_tlbshootdown(c, mapping);
+	}
+	for (i = 0; i < numcpus; i++) {
+		P(mapping->sem);
+	}
+	sem_destroy(mapping->sem);
 }
 
 void

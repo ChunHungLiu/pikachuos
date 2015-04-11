@@ -57,7 +57,7 @@ int cm_evict_page(void);
  * Allocate a page of memory, pointing back to the virtual address in the
  * address space that references it
  */
-paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va, ...);
+paddr_t cm_alloc_page(struct addrspace *as, vaddr_t va);
 
 /* Find a contiguous npages of memory */
 paddr_t cm_alloc_npages(unsigned npages);
@@ -74,6 +74,9 @@ paddr_t cm_load_page(struct addrspace *as, vaddr_t va);
 void cm_set_dirty(paddr_t paddr);
 
 int cm_get_free_page(void);
+
+/* Should be called any time a coremap is allocated/deallocated */
+void cm_used_change(int amount);
 
 /* Should be called any time memory is given out */
 void cm_mem_change(int amount);
