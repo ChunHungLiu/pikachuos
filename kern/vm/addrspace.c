@@ -314,14 +314,13 @@ int
 as_check_region(struct addrspace *as, vaddr_t va)
 {
 	int i;
-	int permissions = 0;
 	struct region *region;
 	int len = array_num(as->as_regions);
 
 	for (i = 0; i < len; i++){
 		region = array_get(as->as_regions, i);
 		if (va >= region->base && va < (region->base + region->size)){
-			return permissions;
+			return region->permission;
 		}
 	}
 	// Can't find the addr in region, this is a segfault

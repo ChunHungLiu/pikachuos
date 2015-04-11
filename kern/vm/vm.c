@@ -13,6 +13,7 @@
 #include <spinlock.h>
 #include <mainbus.h>
 #include <coremap.h>
+#include <elf.h>
 
 #define TLB_DEBUG(message...) kprintf("sbrk: ");kprintf(message);
 #define TLB_DONE kprintf("done\n");
@@ -80,37 +81,35 @@ int vm_fault(int faulttype, vaddr_t faultaddress)
 {
     struct pt_entry *pt_entry;
     uint32_t tlbhi, tlblo;
-    int spl;
-
-    //KASSERT(faultaddress != 0);
-
-    // TODO: implement regions
-    // struct as_region *region;
-
-    // // Address space checks
-    // region = as_get_region(faultaddress);
-
-
-    // // Check that the faulting address is in the address space
-    // if (region == NULL) {
-    //  return EFAULT;
-    // }
-
-    // // Process lacks permissions for accessing this address
-    // if (faulttype == VM_FAULT_READ     && !region->readable ||   // Result of read
-    //  faulttype == VM_FAULT_WRITE    && !region->writable ||  // Result of write
-    //  faulttype == VM_FAULT_READONLY && !region->writable) {  // Result of write
-    //  return EFAULT;
-    // }
-
-    // If we have reached this point, the process has access to the faulting address
+    int spl, perms;
 
     struct addrspace* as = curproc->p_addrspace;
 
+    //KASSERT(faultaddress != 0);
+
+    // Address space checks
+    perms = as_check_region(as, faultaddress);
+    if (perms < 0 && 
+        (faultaddress < USERSTACK - VM_STACKPAGES * PAGE_SIZE || faultaddress > USERSTACK) &&
+        (faultaddress < as->heap_start || faultaddress > as->heap_end)) {
+        return EFAULT;
+    }
+
+    // Process lacks permissions for accessing this address
+    //if ((faulttype == VM_FAULT_READ     && !(perms & PF_R)) ||   // Result of read
+    //    (faulttype == VM_FAULT_WRITE    && !(perms & PF_W)) ||  // Result of write
+    //    (faulttype == VM_FAULT_READONLY && !(perms & PF_W))) {  // Result of write
+    //    return EFAULT;
+    //}
+
+    // If we have reached this point, the process has access to the faulting address
+
     // Create L2 lock if necessary
     int index_hi = faultaddress >> 22;
-    if (as->pagetable[index_hi] == NULL) {
+    if (as->pt_locks[index_hi] == NULL) {
         as->pt_locks[index_hi] = lock_create("pt");
+    }
+    if (as->pagetable[index_hi] == NULL) {
         as->pagetable[index_hi] = kmalloc(PT_LEVEL_SIZE * sizeof(struct pt_entry));
         memset(as->pagetable[index_hi], 0, PT_LEVEL_SIZE * sizeof(struct pt_entry));
     }

@@ -14,8 +14,6 @@
 #include <copyinout.h>
 #include <coremap.h>
 
-#define VM_STACKPAGES 18
-
 //#define SBRK_DEBUG(message...) kprintf("sbrk: ");kprintf(message);
 #define SBRK_DEBUG(message...) ;
 #define SBRK_DONE (void)0;
