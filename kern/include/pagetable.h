@@ -21,7 +21,6 @@ struct pt_entry {
     short store_index;		// Where the entry is located in backing storage. Negative if not on disk.
     bool in_memory;			// true if the page is in memory
     bool allocated;			// true if the page has been allocated
-    struct lock *lk;		// Get rid of this at some point
 };
 
 struct pt_entry* pte_lock(struct addrspace *as, vaddr_t vaddr);

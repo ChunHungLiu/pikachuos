@@ -35,14 +35,6 @@
 #include <proc.h>
 #include <coremap.h>
 
-/*
- * Note! If OPT_DUMBVM is set, as is the case until you start the VM
- * assignment, this file is not compiled or linked or in any way
- * used. The cheesy hack versions in dumbvm.c are used instead.
- */
-
- // TODO: Addespace code goes here
-
 struct addrspace *
 as_create(void)
 {
@@ -61,7 +53,8 @@ as_create(void)
 		as->pt_locks[i] = NULL;
 	as->pagetable = pagetable_create();
 	
-	// TODO: error checking and clean up here
+	KASSERT(as->pt_locks);
+	KASSERT(as->pagetable);
 
 	as->as_regions = array_create();
 	as->heap_start = 0;
@@ -73,8 +66,6 @@ as_create(void)
 int
 as_copy(struct addrspace *old, struct addrspace **ret)
 {
-	(void) old;
-	
 	struct addrspace *newas;
 	int i,j, errno, retval, offset, region_len;
 	struct region *old_region, *new_region;
@@ -138,7 +129,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 					new_entry->store_index = offset;
 					new_entry->in_memory = false;
 					new_entry->allocated = true;
-					new_entry->lk = lock_create("pt");
 				}
 			}
 		}

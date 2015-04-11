@@ -112,7 +112,9 @@ void pt_dealloc_page(struct addrspace *as, vaddr_t vaddr) {
 
 	struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
 
-	cm_dealloc_page(NULL, pt_entry->p_addr);
+	// If in memory, deallocated that segment
+	if (pt_entry->in_memory)
+		cm_dealloc_page(NULL, pt_entry->p_addr);
 
 	pt_entry->p_addr = 0;
 	pt_entry->store_index = 0;
@@ -161,7 +163,7 @@ void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
 	PT_DEBUG("destroy (addrspace) %p\n", as);
     int i, j;
     struct pt_entry *pt_entry;
-    for (i = 0; i < PT_LEVEL_SIZE; i ++) {
+    for (i = 0; i < PT_LEVEL_SIZE; i++) {
         if (pagetable[i] != NULL) {
             for (j = 0; j < PT_LEVEL_SIZE; j++) {
                 pt_entry = &pagetable[i][j];
@@ -171,7 +173,9 @@ void pt_destroy(struct addrspace *as, struct pt_entry** pagetable) {
                     pt_dealloc_page(as, (i << 22) | (j << 12));
                 }
             }
+        	lock_acquire(as->pt_locks[i]);
        		kfree(pagetable[i]);
+       		lock_release(as->pt_locks[i]);
         }
     }
     kfree(pagetable);

@@ -27,7 +27,6 @@ static void run_forked_proc(void *tf, unsigned long junk)
 }
 
 int sys_fork(struct trapframe *tf, pid_t *retval) {
-	kprintf("Fork\n");
 	int result;
 	char* name;
 	(void) result;

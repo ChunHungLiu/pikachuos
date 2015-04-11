@@ -112,7 +112,7 @@ void cm_bootstrap(void) {
 
 	cm_entries = (mem_end - mem_start) / PAGE_SIZE;
 	cm_base = mem_start / PAGE_SIZE;
-    cm_used = 0;
+    cm_used = 1;
 
     // TODO: Can be replaced with memset
 	for (i = 0; i < (int)cm_entries; i++) {
@@ -187,6 +187,8 @@ paddr_t cm_alloc_page(struct addrspace *as, vaddr_t vaddr) {
 paddr_t cm_load_page(struct addrspace *as, vaddr_t vaddr) {
     int cm_index = cm_alloc_entry(as, vaddr, true);
 
+    KASSERT(coremap[cm_index].busy);
+
     // Should be locked. Get the pagetable entry and read in
     KASSERT(pte_locked(as, vaddr));
     struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
@@ -235,6 +237,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
                 for (unsigned i = start_index; i <= end_index; i++) {
                     // We may need to page out user pages to make space for our kernel
                     if (coremap[i].allocated) {
+                        KASSERT(coremap[i].busy);
                         cm_do_evict(i);
                         KASSERT(!coremap[i].allocated);
                     }
@@ -245,6 +248,7 @@ paddr_t cm_alloc_npages(unsigned npages) {
                     // Can't be set after we set busy to false, so we need some dirty logic here
                     if (i < end_index)
                         coremap[i].has_next = true;
+                    KASSERT(coremap[i].busy);
                     coremap[i].busy = false;
                     CM_DONE;
                 }
@@ -284,11 +288,16 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
         coremap[cm_index].busy = true;
         spinlock_release(&busy_lock);
 
+        //
+        KASSERT(coremap[cm_index].allocated);
+
         // Check if we should continue, unlock this entry
         has_next = coremap[cm_index].has_next;
         if (has_next) {
             CM_DEBUG("continuing to next contiguous page\n");
         }
+
+        KASSERT(coremap[cm_index].busy);
 
         // If this is not the kernel, set this to 'free' in the backing store
         if (as != NULL) {
@@ -300,6 +309,8 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
             pte_unlock(as, coremap[cm_index].vm_addr);
         }
 
+        KASSERT(coremap[cm_index].busy);
+
         // Fill with something recognizable for debugging purposes
         if (as == NULL) {
             for (unsigned i = 0; i < 1024; i++) {
@@ -307,11 +318,12 @@ void cm_dealloc_page(struct addrspace *as, paddr_t paddr) {
             }
         }
 
+        KASSERT(coremap[cm_index].busy);
+
         CM_DEBUG("deallocating (cm_entry) %d from (addrspace) %p...", cm_index, as);
         coremap[cm_index].allocated     = 0;
         coremap[cm_index].vm_addr       = 0;
         coremap[cm_index].is_kernel     = 0;
-        coremap[cm_index].allocated     = 0;
         coremap[cm_index].has_next      = 0;
         coremap[cm_index].used_recently = 0;
         coremap[cm_index].dirty         = 0;
@@ -346,7 +358,7 @@ int cm_get_free_page(void) {
     // Linearly probe for a free entry and mark it as busy
     for (i = 0; i < cm_entries; i++){
         spinlock_acquire(&busy_lock);
-        if (!coremap[i].allocated) {
+        if (!coremap[i].allocated && !coremap[i].busy) {
             coremap[i].busy = true;
             spinlock_release(&busy_lock);
             return i;
@@ -385,15 +397,17 @@ static int cm_do_evict(int cm_index) {
 
     if (!locked) pte_lock(as, vaddr);
 
+    // We invalidate the virtual address on all cpus before we touch the pagetable entry
+    ipi_tlbshootdown_allcpus(&(const struct tlbshootdown){vaddr, sem_create("Shootdown", 0)});
+
+    CM_DEBUG("paging out (cm_entry) %d from (addrspace) %p...", cm_index, as);
+
     // If dirty, write the page to disk and set it to clean
     if (coremap[cm_index].dirty) {
         err = bs_write_out(cm_index);
         KASSERT(!err);
         coremap[cm_index].dirty = 0;
     }
-
-    // We invalidate the virtual address on all cpus before we touch the pagetable entry
-    ipi_tlbshootdown_allcpus(&(const struct tlbshootdown){vaddr, sem_create("Shootdown", 0)});
 
     // Get the pagetable entry and set it to not be in memory
     struct pt_entry *pt_entry = pt_get_entry(as, vaddr);
@@ -404,9 +418,14 @@ static int cm_do_evict(int cm_index) {
 
     // Set this coremap entry to be unused
     coremap[cm_index].allocated = 0;
+
+    CM_DONE;
     
     // Track number of used coremap entries
     cm_used_change(-1);
+
+    KASSERT(coremap[cm_index].busy);
+    KASSERT(!coremap[cm_index].allocated);
 
     return cm_index;
 }
