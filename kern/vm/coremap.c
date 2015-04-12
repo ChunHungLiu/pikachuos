@@ -17,7 +17,7 @@
 
 #include <cpu.h>
 
-#define DEBUG_CM
+//#define DEBUG_CM
 //#define DEBUG_BS
 
 #ifdef DEBUG_CM
