@@ -1,0 +1,76 @@
+Script started on Sun, Apr 12, 2015  4:02:03 PM
+]0;/cygdrive/d/Dropbox/2015 Spring/CS 161/os161_1/submit/asst3
+[32mDavid@WIN-L602IFBL919 [33m/cygdrive/d/Dropbox/2015 Spring/CS 161/os161_1/submit/asst3[0m
+$ ssh cs161
+Welcome to Ubuntu 14.04.2 LTS (GNU/Linux 3.13.0-46-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com/
+
+  System information as of Sun Apr 12 19:08:29 UTC 2015
+
+  System load:  0.19               Processes:           114
+  Usage of /:   24.4% of 29.39GB   Users logged in:     1
+  Memory usage: 38%                IP address for eth0: 172.31.53.126
+  Swap usage:   0%
+
+  Graph this data and manage this system at:
+    https://landscape.canonical.com/
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+22 packages can be updated.
+12 updates are security updates.
+
+
+Last login: Sun Apr 12 19:01:37 2015 from 128.103.9.252
+ubuntu@ip-172-31-53-126:~$ cd cs161/root/
+ubuntu@ip-172-31-53-126:~/cs161/root$ sys161 kernel
+sys161: System/161 release 2.0.2, compiled Mar 16 2015 03:20:06
+
+OS/161 base system version 2.0
+Copyright (c) 2000, 2001-2005, 2008-2011, 2013, 2014
+   President and Fellows of Harvard College.  All rights reserved.
+
+PikachuOS's system version 0 (ASST3-OPT #27)
+
+744k physical memory available
+Device probe...
+lamebus0 (system main bus)
+emu0 at lamebus0
+ltrace0 at lamebus0
+ltimer0 at lamebus0
+beep0 at ltimer0
+rtclock0 at ltimer0
+lrandom0 at lamebus0
+random0 at lrandom0
+lhd0 at lamebus0
+lhd1 at lamebus0
+lser0 at lamebus0
+con0 at lser0
+
+cpu0: MIPS/161 (System/161 2.x) features 0x0
+cpu1: MIPS/161 (System/161 2.x) features 0x0
+buffers: max count 512; max size 256k
+OS/161 kernel [? for menu]: p testbin/matmult
+matmult finished.
+answer is: 8772192 (should be 8772192)
+Passed.
+Operation took 40.238767696 seconds
+OS/161 kernel [? for menu]: p /sbin/poweroff
+Shutting down.
+The system is halted.
+cpu1: offline.
+sys161: 1895954122 cycles (316976308 run, 1578977814 global-idle)
+sys161:   cpu0: 45539206 kern, 5352419 user, 101615 idle; 149576 ll, 149576/0 sc, 442987 sync
+sys161:   cpu1: 1987446 kern, 0 user, 49005794 idle; 2982 ll, 2982/0 sc, 10951 sync
+sys161: 14248 irqs 4389 exns 2504r/2840w disk 35r/850w console 17r/0w/5m emufs 0r/0w net
+sys161: Elapsed real time: 45.980082 seconds (41.2342 mhz)
+sys161: Elapsed virtual time: 75.842539687 seconds (25 mhz)
+ubuntu@ip-172-31-53-126:~/cs161/root$ logout
+Connection to 52.4.112.243 closed.
+]0;/cygdrive/d/Dropbox/2015 Spring/CS 161/os161_1/submit/asst3
+[32mDavid@WIN-L602IFBL919 [33m/cygdrive/d/Dropbox/2015 Spring/CS 161/os161_1/submit/asst3[0m
+$ exit
+
+Script done on Sun, Apr 12, 2015  4:04:24 PM
