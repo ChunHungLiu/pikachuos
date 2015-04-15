@@ -112,6 +112,7 @@ int sfs_metaio(struct sfs_vnode *sv, off_t pos, void *data, size_t len,
 
 /* Functions in sfs_jphys.c */
 bool sfs_block_is_journal(struct sfs_fs *sfs, uint32_t block);
+/* writer interface */
 sfs_lsn_t sfs_jphys_write(struct sfs_fs *sfs,
 		void (*callback)(struct sfs_fs *sfs,
 			sfs_lsn_t newlsn,
@@ -119,13 +120,16 @@ sfs_lsn_t sfs_jphys_write(struct sfs_fs *sfs,
 		struct sfs_jphys_writecontext *ctx,
 		unsigned code, const void *rec, size_t len);
 int sfs_jphys_flush(struct sfs_fs *sfs, sfs_lsn_t lsn);
-int sfs_jphys_flushforjournalblock(struct sfs_fs *sfs, daddr_t diskblock);
 int sfs_jphys_flushall(struct sfs_fs *sfs);
+/* these are already deployed in sfs_writeblock */
+int sfs_jphys_flushforjournalblock(struct sfs_fs *sfs, daddr_t diskblock);
 void sfs_wrote_journal_block(struct sfs_fs *sfs, daddr_t diskblock);
+/* interface for checkpointing */
 sfs_lsn_t sfs_jphys_peeknextlsn(struct sfs_fs *sfs);
 void sfs_jphys_trim(struct sfs_fs *sfs, sfs_lsn_t taillsn);
-uint32_t sfs_jphys_getjblockcount(struct sfs_jphys *jp);
-void sfs_jphys_clearjblockcount(struct sfs_jphys *jp);
+uint32_t sfs_jphys_getodometer(struct sfs_jphys *jp);
+void sfs_jphys_clearodometer(struct sfs_jphys *jp);
+/* reader interface */
 bool sfs_jiter_done(struct sfs_jiter *ji);
 unsigned sfs_jiter_type(struct sfs_jiter *ji);
 sfs_lsn_t sfs_jiter_lsn(struct sfs_jiter *ji);
@@ -137,14 +141,16 @@ int sfs_jiter_seektail(struct sfs_fs *sfs, struct sfs_jiter *ji);
 int sfs_jiter_fwdcreate(struct sfs_fs *sfs, struct sfs_jiter **ji_ret);
 int sfs_jiter_revcreate(struct sfs_fs *sfs, struct sfs_jiter **ji);
 void sfs_jiter_destroy(struct sfs_jiter *ji);
-int sfs_jphys_recover(struct sfs_fs *sfs);
+/* load up the physical journal (already deployed in mount) */
+int sfs_jphys_loadup(struct sfs_fs *sfs);
+/* control and mode changes (already deployed in sfs_fsops.c) */
 struct sfs_jphys *sfs_jphys_create(void);
 void sfs_jphys_destroy(struct sfs_jphys *jp);
-void sfs_jphys_startscanning(struct sfs_jphys *jp);
-void sfs_jphys_stopscanning(struct sfs_jphys *jp);
-int sfs_jphys_start(struct sfs_fs *sfs);
-void sfs_jphys_unstart(struct sfs_fs *sfs);
-void sfs_jphys_stop(struct sfs_jphys *jp);
+void sfs_jphys_startreading(struct sfs_fs *sfs);
+void sfs_jphys_stopreading(struct sfs_fs *sfs);
+int sfs_jphys_startwriting(struct sfs_fs *sfs);
+void sfs_jphys_unstartwriting(struct sfs_fs *sfs);
+void sfs_jphys_stopwriting(struct sfs_fs *sfs);
 
 
 #endif /* _SFSPRIVATE_H_ */
