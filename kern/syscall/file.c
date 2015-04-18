@@ -10,6 +10,7 @@
 #include <test.h>
 #include <proc.h>
 #include <synch.h>
+#include <uio.h>
 
 /**
  * Allocates and initializes a file_obj to point to the supplied vnode, and
@@ -164,4 +165,36 @@ int filetable_destroy() {
 	}
 	kfree(curproc->p_filetable);
 	return 0;
+}
+
+int filetable_get(struct filetable *filetable, int fd, struct file_obj** retval) {
+	if (fd < 0 || fd > OPEN_MAX)
+		return EBADF;
+	lock_acquire(filetable->filetable_lock);
+	*retval = filetable->filetable_files[fd];
+	lock_release(filetable->filetable_lock);
+	if (retval == NULL)
+		return EBADF;
+	return 0;
+}
+
+int filetable_put(struct filetable *filetable, int fd, struct file_obj* file) {
+	if (fd < 0 || fd > OPEN_MAX)
+		return EBADF;
+	lock_acquire(filetable->filetable_lock);
+	filetable->filetable_files[fd] = file;
+	lock_release(filetable->filetable_lock);
+	return 0;
+}
+
+void uio_uinit(struct iovec *iov, struct uio *useruio, void *buf, size_t buflen, off_t offset, enum uio_rw uio_rw) {
+	iov->iov_ubase = buf;
+	iov->iov_len = buflen;
+	useruio->uio_iov = iov;
+	useruio->uio_iovcnt = 1;
+	useruio->uio_offset = offset;
+	useruio->uio_resid = buflen;
+	useruio->uio_segflg = UIO_USERSPACE;
+	useruio->uio_rw = uio_rw;
+	useruio->uio_space = proc_getas();
 }

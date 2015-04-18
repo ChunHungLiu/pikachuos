@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014
+ * Copyright (c) 2014, 2015
  *	The President and Fellows of Harvard College.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -66,21 +66,25 @@ struct sfs_jposition {
  *
  * XXX find a new name for jp_nextlsn? it is now confusing.
  *
- * Note: jp_headjblock is the in-memory head. The on-disk head is
- * implicit in jp_writestate. (FUTURE: instead of jp_writestate, which
- * is an array of flags, move to a simpler representation that just
- * has the on-disk head.)
+ * Note: jp_headjblock and jp_headbyte identify the location of the
+ * in-memory head. The on-disk head is at the beginning of the block
+ * jp_oldestjblock, because that's the oldest journal block that
+ * hasn't been written yet.
  *
- * The in-memory tail is jp_oldestjblock.
+ * The in-memory tail (the oldest journal record still in memory) is
+ * also at the beginning of jp_oldestjblock, because we discard
+ * journal blocks once they're written out.
  *
  * The on-disk tail is not actually tracked; it's just written out
  * when we trim the log. XXX: we should track it so we can check for
- * head/tail collisions.
+ * head/tail collisions. The reason this is problematic is that we
+ * need to check its physical location, not just its LSN, and all we
+ * get (or can expect to get) in sfs_jphys_trim is the LSN.
  */
 struct sfs_jphys {
 	bool jp_physrecovered;		/* container-level recovery done */
-	bool jp_recoverymode;		/* recovery mode enabled */
-	bool jp_operatingmode;		/* operating mode enabled */
+	bool jp_readermode;		/* reading mode enabled */
+	bool jp_writermode;		/* writing mode enabled */
 
 	struct lock *jp_lock;		/* lock for the physical journal */
 
@@ -95,10 +99,10 @@ struct sfs_jphys {
 
 	sfs_lsn_t jp_nextlsn;		/* next LSN to use */
 
-	uint32_t jp_jblockcount;	/* counter of jblocks used */
+	uint32_t jp_odometer;		/* counter of jblocks used */
 
 	struct spinlock jp_lsnmaplock;	/* lock for the following */
-	sfs_lsn_t *jp_firstlsns;		/* first lsn in each journal block */
+	sfs_lsn_t *jp_firstlsns;	/* first lsn in each journal block */
 	uint32_t jp_oldestjblock;	/* oldest journal block in memory */
 
 	/* These are only valid during recovery and not afterwards updated. */
@@ -106,16 +110,12 @@ struct sfs_jphys {
 	struct sfs_jposition jp_recov_headpos;
 };
 
-/*
- * Constants for jp_writestate
- */
-#define SFS_WS_CLEAN    0
-#define SFS_WS_DIRTY    1
-#define SFS_WS_BUSY     2
-
 ////////////////////////////////////////////////////////////
 // support code
 
+/*
+ * Check if a disk block number is in the journal.
+ */
 bool
 sfs_block_is_journal(struct sfs_fs *sfs, uint32_t block)
 {
@@ -161,7 +161,7 @@ sfs_jposition_eq(const struct sfs_jposition *a, const struct sfs_jposition *b)
 }
 
 ////////////////////////////////////////////////////////////
-// operating mode interface
+// writer interface
 
 /*
  * Move to the next journal block. (If we don't need another journal
@@ -302,7 +302,7 @@ sfs_getnextbuf(struct sfs_fs *sfs)
 	lock_acquire(jp->jp_lock);
 	jp->jp_nextbuf = buf;
 	jp->jp_gettingnext = NULL;
-	jp->jp_jblockcount++;
+	jp->jp_odometer++;
 	cv_broadcast(jp->jp_nextcv, jp->jp_lock);
 }
 
@@ -365,8 +365,8 @@ sfs_pad_journal(struct sfs_fs *sfs)
  *
  * TAILLSN is the tail LSN to apply to the tail reservation TRES.
  * TRES can be null in cases where no tail reservation is needed
- * (e.g. for checkpoint records); TAILLSN can also be zero, in
- * which case the LSN of the current record is used.
+ * (e.g. for trim records); TAILLSN can also be zero, in which case
+ * the LSN of the current record is used.
  *
  * CODE is the journal record type code; REC is the record data, which
  * is of length LEN.
@@ -458,8 +458,8 @@ sfs_jphys_write_internal(struct sfs_fs *sfs,
 }
 
 /*
- * External version, that asserts if anyone tries to write
- * record numbers reserved for jphys.
+ * External version, that writes only client records and not internal
+ * records.
  */
 sfs_lsn_t
 sfs_jphys_write(struct sfs_fs *sfs,
@@ -471,31 +471,40 @@ sfs_jphys_write(struct sfs_fs *sfs,
 {
 	struct sfs_jphys *jp = sfs->sfs_jphys;
 
-	/* Must get to operating mode before adding journal entries. */
-	KASSERT(jp->jp_operatingmode);
+	/* Must be in writing mode before adding journal entries. */
+	KASSERT(jp->jp_writermode);
 
 	return sfs_jphys_write_internal(sfs, callback, ctx, SFS_JPHYS_CLIENT,
 					code, rec, len);
 }
 
+////////////////////////////////////////////////////////////
+// journal flushing
+
 /*
  * Make sure the journal records up to and including the given LSN
  * are written to disk; write them out if necessary.
  *
- * There are two ways to get here:
+ * There are three ways to get here:
  *
- * 1. When the buffer cache writes out a buffer, it calls
- * sfs_writeblock; that checks higher-level data structures and
- * calls sfs_jphys_flush() if necessary to maintain the ordering of
- * the journal or the write-ahead invariant required by recovery.
+ * 1. When the buffer cache writes out a journal buffer, it calls
+ * sfs_writeblock; code there calls sfs_jphys_flushforjournalblock to
+ * make sure the journal is written out in order. (Then afterwards it
+ * calls sfs_wrote_journal_block to update our records of which
+ * journal blocks are on disk.)
  *
  * Journal blocks *must* be written out in order, because not doing so
- * violates assumptions made by the recovery code.
+ * violates assumptions made by the code that recovers the physical
+ * journal container -- in particular how it finds the journal head.
  *
- * 2. An explicit sync call goes through sfs_sync, which calls
- * sfs_jphys_flush() twice, once for write-ahead before writing out
- * the free block bitmap, and again at the end to write out the
- * checkpoint it made.
+ * 2. When the buffer cache writes out other buffers, it also calls
+ * sfs_writeblock; code should be added there to flush the journal
+ * (with sfs_jphys_flush) as necessary to maintain the write-ahead
+ * logging invariant required for recovery.
+ *
+ * 3. An explicit sync call goes through sfs_sync, which by default
+ * calls sfs_jphys_flushall and might do more than that, e.g. in
+ * connection with writing out the freemap.
  *
  * When we get here from sfs_writeblock, we are always holding at
  * least one buffer, namely the one sfs_writeblock is supposed to
@@ -508,11 +517,11 @@ sfs_jphys_write(struct sfs_fs *sfs,
  * - We're called with LSNS but we need to do I/O in terms of blocks,
  * so we need to be able to figure out which journal block a given LSN
  * went into. Since we don't require records to all be the same size,
- * we have to maintain a mapping. jp->firstlsns[] contains (for each
- * journal block) the first LSN in that block. For now it's just a
- * (large) array indexed by journal block number. As most of the time
- * most of it will be zero, it would probably be better to come up with
- * a more compact representation. (XXX)
+ * we have to maintain a mapping. jp->jp_firstlsns[] contains (for
+ * each journal block) the first LSN in that block. For now it's just
+ * a (large) array indexed by journal block number. As most of the
+ * time most of it will be zero, it would probably be better to come
+ * up with a more compact representation. (XXX)
  *
  * - If a journal buffer is written by the syncer, rather than being
  * written explicitly from here, it won't get invalidated and it will
@@ -532,11 +541,14 @@ sfs_jphys_flush(struct sfs_fs *sfs, sfs_lsn_t lsn)
 	int result;
 
 	if (lsn == 0) {
-		/* this can happen during recovery; don't choke on it */
+		/*
+		 * This can reasonably happen during recovery; don't
+		 * choke on it.
+		 */
 		return 0;
 	}
 
-	KASSERT(jp->jp_operatingmode);
+	KASSERT(jp->jp_writermode);
 
 	lock_acquire(jp->jp_lock);
 
@@ -702,10 +714,15 @@ sfs_wrote_journal_block(struct sfs_fs *sfs, daddr_t diskblock)
 	spinlock_release(&jp->jp_lsnmaplock);
 }
 
+////////////////////////////////////////////////////////////
+// interface for checkpointing
+
 /*
- * Fetch the current next-LSN. Note that more records may be
- * added before the caller sees the value, so the safe uses
- * of the value are very limited.
+ * Fetch the current next-LSN. Note that more records may be added
+ * before the caller sees the value, so the safe uses of the value are
+ * very limited. It's intended for use as a point to trim to when
+ * checkpointing if no other constraints apply, because in that case
+ * if more records get added nothing bad happens.
  */
 sfs_lsn_t
 sfs_jphys_peeknextlsn(struct sfs_fs *sfs)
@@ -720,13 +737,18 @@ sfs_jphys_peeknextlsn(struct sfs_fs *sfs)
 	return nextlsn;
 }
 
+/*
+ * Trim the journal to a given LSN. The LSN specified is left in the
+ * journal, but all LSNs before it are discarded and will no longer
+ * be seen at recovery time.
+ */
 void
 sfs_jphys_trim(struct sfs_fs *sfs, sfs_lsn_t taillsn)
 {
 	struct sfs_jphys *jp = sfs->sfs_jphys;
 	struct sfs_jphys_trim rec;
 
-	KASSERT(jp->jp_operatingmode);
+	KASSERT(jp->jp_writermode);
 
 	rec.jt_taillsn = taillsn;
 	sfs_jphys_write_internal(sfs, 0, NULL,
@@ -734,36 +756,44 @@ sfs_jphys_trim(struct sfs_fs *sfs, sfs_lsn_t taillsn)
 				 &rec, sizeof(rec));
 }
 
+/*
+ * Retrieve the current value of the journal odometer -- this is how
+ * many journal blocks have been used since mount or since it was last
+ * zeroed.
+ */
 uint32_t
-sfs_jphys_getjblockcount(struct sfs_jphys *jp)
+sfs_jphys_getodometer(struct sfs_jphys *jp)
 {
 	uint32_t ret;
 
-	KASSERT(jp->jp_operatingmode);
+	KASSERT(jp->jp_writermode);
 
 	/*
 	 * In a production kernel one would probably use atomic
-	 * operations for jblockcount.
+	 * operations for the odometer.
 	 */
 	lock_acquire(jp->jp_lock);
-	ret = jp->jp_jblockcount;
+	ret = jp->jp_odometer;
 	lock_release(jp->jp_lock);
 
 	return ret;
 }
 
+/*
+ * Reset the journal odometer.
+ */
 void
-sfs_jphys_clearjblockcount(struct sfs_jphys *jp)
+sfs_jphys_clearodometer(struct sfs_jphys *jp)
 {
-	KASSERT(jp->jp_operatingmode);
+	KASSERT(jp->jp_writermode);
 
 	lock_acquire(jp->jp_lock);
-	jp->jp_jblockcount = 0;
+	jp->jp_odometer = 0;
 	lock_release(jp->jp_lock);
 }
 
 ////////////////////////////////////////////////////////////
-// journal iterator (recovery mode) interface
+// journal iterator (reader mode) interface
 
 /*
  * Journal iteration state.
@@ -784,9 +814,16 @@ sfs_jphys_clearjblockcount(struct sfs_jphys *jp)
  * Moving forward *to* headpos, or backward *from* tailpos, does not
  * actually move but instead sets ji_done.
  *
+ * Note that because the last record (in either direction) might or
+ * might not be an internal record, when iterating from outside (with
+ * ji_seeall is false) reaching the end and iterating back in the
+ * other direction won't in general behave as desired. Use one of the
+ * seek calls explicitly before changing direction at an endpoint.
+ * This is a bug. (XXX)
+ *
  * There is no way to set headpos and tailpos so that the iteration
  * seems empty; however, that's ok as the journal can never be fully
- * empty. (There must always be at least one checkpoint.)
+ * empty. (There must always be at least one trim record.)
  */
 struct sfs_jiter {
 	/* iteration bounds */
@@ -1313,7 +1350,7 @@ sfs_jiter_fwdcreate(struct sfs_fs *sfs, struct sfs_jiter **ji_ret)
 	struct sfs_jiter *ji;
 	int result;
 
-	KASSERT(jp->jp_recoverymode);
+	KASSERT(jp->jp_readermode);
 
 	ji = sfs_jiter_create(sfs,
 			      &jp->jp_recov_tailpos, &jp->jp_recov_headpos,
@@ -1343,7 +1380,7 @@ sfs_jiter_revcreate(struct sfs_fs *sfs, struct sfs_jiter **ji_ret)
 	struct sfs_jiter *ji;
 	int result;
 
-	KASSERT(jp->jp_recoverymode);
+	KASSERT(jp->jp_readermode);
 
 	ji = sfs_jiter_create(sfs,
 			      &jp->jp_recov_tailpos, &jp->jp_recov_headpos,
@@ -1379,11 +1416,13 @@ sfs_jiter_destroy(struct sfs_jiter *ji)
 // container-level recovery
 
 /*
- * Look for the head. If we see at least one checkpoint in the process,
- * provide the tail LSN and the position to start looking for the tail.
- * Always provide the head position and head LSN.
+ * Look for the head. If we see at least one trim record in the
+ * process, provide the tail LSN and the position to start looking for
+ * the tail. Always provide the head position and head LSN.
  *
- * FUTURE: find the head by binary search.
+ * FUTURE: find the head by binary search. We could also stash a
+ * recent head position in the superblock and use that as a hint to
+ * start searching.
  */
 static
 int
@@ -1477,10 +1516,9 @@ sfs_scan_for_head(struct sfs_fs *sfs,
 			memcpy(&jt, rec, sizeof(jt));
 
 			/*
-			 * Search should include the checkpoint
-			 * record, so advance the iterator now; then
-			 * if we get the position it will all work
-			 * properly.
+			 * The search should include the trim record,
+			 * so advance the iterator now; then if we get
+			 * the position it will all work properly.
 			 */
 			result = sfs_jiter_next(sfs, ji);
 			if (result) {
@@ -1520,14 +1558,14 @@ sfs_scan_for_head(struct sfs_fs *sfs,
 }
 
 /*
- * Scan backwards for a checkpoint. Return the tail LSN from the
- * checkpoint, and the position to start looking for the tail at.
+ * Scan backwards for a trim record. Return the tail LSN from the trim
+ * record, and the position to start looking for the tail at.
  */
 static
 int
-sfs_scan_for_checkpoint(struct sfs_fs *sfs,
-			struct sfs_jposition *tailsearchpos_ret,
-			sfs_lsn_t *taillsn_ret)
+sfs_scan_for_trim(struct sfs_fs *sfs,
+		  struct sfs_jposition *tailsearchpos_ret,
+		  sfs_lsn_t *taillsn_ret)
 {
 	struct sfs_jposition startpos;
 	struct sfs_jiter *ji;
@@ -1539,7 +1577,7 @@ sfs_scan_for_checkpoint(struct sfs_fs *sfs,
 	int result;
 
 	/*
-	 * If there was a checkpoint between the physical beginning
+	 * If there was a trim record between the physical beginning
 	 * and the head, we would have found it already. So scan
 	 * backward from the physical end.
 	 */
@@ -1602,7 +1640,7 @@ sfs_scan_for_checkpoint(struct sfs_fs *sfs,
 	}
 	sfs_jiter_destroy(ji);
 
-	kprintf("sfs: %s: no checkpoint found\n",
+	kprintf("sfs: %s: no trim record found\n",
 		sfs->sfs_sb.sb_volname);
 	return EFTYPE;
 }
@@ -1673,10 +1711,11 @@ sfs_scan_for_tail(struct sfs_fs *sfs,
 }
 
 /*
- * Overall function for container-level recovery.
+ * Overall function to load up the container, which is basically
+ * recovery for the container-level information.
  */
 int
-sfs_jphys_recover(struct sfs_fs *sfs)
+sfs_jphys_loadup(struct sfs_fs *sfs)
 {
 	struct sfs_jphys *jp = sfs->sfs_jphys;
 	struct sfs_jposition tailsearchpos;
@@ -1687,7 +1726,7 @@ sfs_jphys_recover(struct sfs_fs *sfs)
 
 	reserve_buffers(SFS_BLOCKSIZE);
 
-	SAY("Scanning to find the head...\n");
+	SAY("sfs_jphys: Scanning to find the journal head...\n");
 	result = sfs_scan_for_head(sfs, &tailsearchpos, &taillsn,
 				   &jp->jp_recov_headpos, &headlsn);
 	if (result) {
@@ -1704,9 +1743,8 @@ sfs_jphys_recover(struct sfs_fs *sfs)
 
 	/* if we haven't got the tail lsn, keep looking */
 	if (taillsn == 0) {
-		SAY("Scanning to find a checkpoint...\n");
-		result = sfs_scan_for_checkpoint(sfs, &tailsearchpos,
-						 &taillsn);
+		SAY("sfs_jphys: Scanning to find a trim record...\n");
+		result = sfs_scan_for_trim(sfs, &tailsearchpos, &taillsn);
 		if (result) {
 			goto out;
 		}
@@ -1718,7 +1756,7 @@ sfs_jphys_recover(struct sfs_fs *sfs)
 	KASSERT(taillsn != 0);
 
 	/* find the tail's physical position */
-	SAY("Scanning to find the tail position...\n");
+	SAY("sfs_jphys: Scanning to find the tail position...\n");
 	result = sfs_scan_for_tail(sfs, &tailsearchpos, taillsn,
 				   &jp->jp_recov_tailpos);
 	if (result) {
@@ -1749,6 +1787,11 @@ out:
 ////////////////////////////////////////////////////////////
 // startup, shutdown, and state transition
 
+/*
+ * Create a jphys object. Called when creating a volume, before the
+ * superblock is read. (Thus, we don't know where the journal is on
+ * disk yet.)
+ */
 struct sfs_jphys *
 sfs_jphys_create(void)
 {
@@ -1759,8 +1802,8 @@ sfs_jphys_create(void)
 		return NULL;
 	}
 	jp->jp_physrecovered = false;
-	jp->jp_recoverymode = false;
-	jp->jp_operatingmode = false;
+	jp->jp_readermode = false;
+	jp->jp_writermode = false;
 
 	jp->jp_lock = lock_create("sfs_jphys");
 	if (jp->jp_lock == NULL) {
@@ -1784,7 +1827,7 @@ sfs_jphys_create(void)
 
 	jp->jp_nextlsn = 0;
 
-	jp->jp_jblockcount = 0;
+	jp->jp_odometer = 0;
 
 	spinlock_init(&jp->jp_lsnmaplock);
 	jp->jp_firstlsns = NULL;
@@ -1798,11 +1841,15 @@ sfs_jphys_create(void)
 	return jp;
 }
 
+/*
+ * Destroy a jphys object. Both reader and writer mode should be
+ * switched off.
+ */
 void
 sfs_jphys_destroy(struct sfs_jphys *jp)
 {
-	KASSERT(jp->jp_operatingmode == false);
-	KASSERT(jp->jp_recoverymode == false);
+	KASSERT(jp->jp_readermode == false);
+	KASSERT(jp->jp_writermode == false);
 
 	spinlock_cleanup(&jp->jp_lsnmaplock);
 	kfree(jp->jp_firstlsns);
@@ -1813,24 +1860,37 @@ sfs_jphys_destroy(struct sfs_jphys *jp)
 	kfree(jp);
 }
 
+/*
+ * Enable reader mode.
+ */
 void
-sfs_jphys_startscanning(struct sfs_jphys *jp)
+sfs_jphys_startreading(struct sfs_fs *sfs)
 {
+	struct sfs_jphys *jp = sfs->sfs_jphys;
+
 	KASSERT(jp->jp_physrecovered);
-	KASSERT(jp->jp_recoverymode == false);
-	jp->jp_recoverymode = true;
+	KASSERT(jp->jp_readermode == false);
+	jp->jp_readermode = true;
 }
 
+/*
+ * Disable reader mode.
+ */
 void
-sfs_jphys_stopscanning(struct sfs_jphys *jp)
+sfs_jphys_stopreading(struct sfs_fs *sfs)
 {
+	struct sfs_jphys *jp = sfs->sfs_jphys;
+
 	KASSERT(jp->jp_physrecovered);
-	KASSERT(jp->jp_recoverymode);
-	jp->jp_recoverymode = false;
+	KASSERT(jp->jp_readermode);
+	jp->jp_readermode = false;
 }
 
+/*
+ * Enable writer mode.
+ */
 int
-sfs_jphys_start(struct sfs_fs *sfs)
+sfs_jphys_startwriting(struct sfs_fs *sfs)
 {
 	struct sfs_jphys *jp = sfs->sfs_jphys;
 	uint32_t nextjblock;
@@ -1838,7 +1898,7 @@ sfs_jphys_start(struct sfs_fs *sfs)
 	int result;
 
 	KASSERT(jp->jp_physrecovered);
-	KASSERT(!jp->jp_operatingmode);
+	KASSERT(!jp->jp_writermode);
 
 	journalblocks = sfs->sfs_sb.sb_journalblocks;
 
@@ -1886,17 +1946,20 @@ sfs_jphys_start(struct sfs_fs *sfs)
 	jp->jp_firstlsns[jp->jp_headjblock] = jp->jp_headfirstlsn;
 	jp->jp_oldestjblock = jp->jp_headjblock;
 
-	jp->jp_operatingmode = true;
+	jp->jp_writermode = true;
 	return 0;
 }
 
+/*
+ * Turn off writer mode again if we haven't actually gone live yet.
+ */
 void
-sfs_jphys_unstart(struct sfs_fs *sfs)
+sfs_jphys_unstartwriting(struct sfs_fs *sfs)
 {
 	struct sfs_jphys *jp = sfs->sfs_jphys;
 
 	KASSERT(jp->jp_physrecovered);
-	KASSERT(jp->jp_operatingmode);
+	KASSERT(jp->jp_writermode);
 
 	/*
 	 * Don't assert that the journal's been flushed. If we're
@@ -1909,20 +1972,29 @@ sfs_jphys_unstart(struct sfs_fs *sfs)
 	jp->jp_headbuf = NULL;
 	jp->jp_nextbuf = NULL;
 
-	jp->jp_operatingmode = false;
+	jp->jp_writermode = false;
 }
 
+/*
+ * Turn off writer mode after running live, called during unmount.
+ * This contains additional assertions to help make sure unmount has
+ * been handled correctly; in particular, unmount should checkpoint
+ * and flush the journal (including the checkpoint) and the state of
+ * things should reflect that.
+ */
 void
-sfs_jphys_stop(struct sfs_jphys *jp)
+sfs_jphys_stopwriting(struct sfs_fs *sfs)
 {
+	struct sfs_jphys *jp = sfs->sfs_jphys;
+
 	lock_acquire(jp->jp_lock);
 
 	KASSERT(jp->jp_physrecovered);
-	KASSERT(jp->jp_operatingmode);
+	KASSERT(jp->jp_writermode);
 
 	/*
-	 * We should have just checkpointed; there should not be
-	 * pending journal records.
+	 * We should have just checkpointed and flushed; there should
+	 * not be pending journal records.
 	 */
 	KASSERT(jp->jp_headbyte == 0);
 
@@ -1940,6 +2012,6 @@ sfs_jphys_stop(struct sfs_jphys *jp)
 	buffer_release_and_invalidate(jp->jp_nextbuf);
 	jp->jp_nextbuf = NULL;
 
-	jp->jp_operatingmode = false;
+	jp->jp_writermode = false;
 	lock_release(jp->jp_lock);
 }

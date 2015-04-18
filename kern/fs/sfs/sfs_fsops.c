@@ -296,7 +296,7 @@ sfs_unmount(struct fs *fs)
 		return EBUSY;
 	}
 
-	sfs_jphys_stop(sfs->sfs_jphys);
+	sfs_jphys_stopwriting(sfs);
 
 	unreserve_fsmanaged_buffers(2, SFS_BLOCKSIZE);
 
@@ -526,11 +526,11 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	reserve_fsmanaged_buffers(2, SFS_BLOCKSIZE);
 
 	/*
-	 * Container recovery.
+	 * Load up the journal container. (basically, recover it)
 	 */
 
-	SAY("*** Container-level recovery ***\n");
-	result = sfs_jphys_recover(sfs);
+	SAY("*** Loading up the jphys container ***\n");
+	result = sfs_jphys_loadup(sfs);
 	if (result) {
 		unreserve_fsmanaged_buffers(2, SFS_BLOCKSIZE);
 		drop_fs_buffers(&sfs->sfs_absfs);
@@ -543,18 +543,18 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	 */
 
 	/* Enable container-level scanning */
-	sfs_jphys_startscanning(sfs->sfs_jphys);
+	sfs_jphys_startreading(sfs);
 
-	/*******************************/
-	/* Put your recovery code here */
-	/*******************************/
+	/********************************/
+	/* Call your recovery code here */
+	/********************************/
 
 	/* Done with container-level scanning */
-	sfs_jphys_stopscanning(sfs->sfs_jphys);
+	sfs_jphys_stopreading(sfs);
 
 	/* Spin up the journal. */
 	SAY("*** Starting up ***\n");
-	result = sfs_jphys_start(sfs);
+	result = sfs_jphys_startwriting(sfs);
 	if (result) {
 		unreserve_fsmanaged_buffers(2, SFS_BLOCKSIZE);
 		drop_fs_buffers(&sfs->sfs_absfs);
@@ -562,9 +562,9 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		return result;
 	}
 
-	/*************************************/
-	/* Maybe put more recovery code here */
-	/*************************************/
+	/**************************************/
+	/* Maybe call more recovery code here */
+	/**************************************/
 
 	/* Hand back the abstract fs */
 	*ret = &sfs->sfs_absfs;

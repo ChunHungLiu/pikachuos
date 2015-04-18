@@ -19,6 +19,7 @@ code for 2.x. I am not even including its old changelog entries.)
 20140924 dholland	Version 1.99.08 of the file system solutions released.
 20140922 dholland	If . or .. is missing, don't let mkdir use these names.
 20140919 dholland	Don't corrupt the fs if truncate fails in rmdir.
+20140919 dholland	Put the additional syscalls in their own file.
 20140918 dholland	Add support for fs-specific buffer metadata.
 20140917 dholland	Add support for "nosync" buffers. See buf.h.
 20140917 dholland	Kill off most of the buffer reservation logic.

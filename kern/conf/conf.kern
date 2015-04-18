@@ -381,6 +381,7 @@ file      syscall/time_syscalls.c
 file      syscall/proc_syscalls.c
 file      syscall/file_syscalls.c
 file      syscall/file.c
+file      syscall/more_syscalls.c
 
 #
 # Startup and initialization
