@@ -111,14 +111,25 @@ sfs_balloc(struct sfs_fs *sfs, daddr_t *diskblock, struct buf **bufret)
 }
 
 /*
+ * Free a block, for when we already have the freemap locked.
+ */
+void
+sfs_bfree_prelocked(struct sfs_fs *sfs, daddr_t diskblock)
+{
+	KASSERT(lock_do_i_hold(sfs->sfs_freemaplock));
+
+	bitmap_unmark(sfs->sfs_freemap, diskblock);
+	sfs->sfs_freemapdirty = true;
+}
+
+/*
  * Free a block.
  */
 void
 sfs_bfree(struct sfs_fs *sfs, daddr_t diskblock)
 {
 	lock_acquire(sfs->sfs_freemaplock);
-	bitmap_unmark(sfs->sfs_freemap, diskblock);
-	sfs->sfs_freemapdirty = true;
+	sfs_bfree_prelocked(sfs, diskblock);
 	lock_release(sfs->sfs_freemaplock);
 }
 
@@ -142,3 +153,17 @@ sfs_bused(struct sfs_fs *sfs, daddr_t diskblock)
 	return result;
 }
 
+/*
+ * Explicitly lock and unlock the freemap.
+ */
+void
+sfs_lock_freemap(struct sfs_fs *sfs)
+{
+	lock_acquire(sfs->sfs_freemaplock);
+}
+
+void
+sfs_unlock_freemap(struct sfs_fs *sfs)
+{
+	lock_release(sfs->sfs_freemaplock);
+}
