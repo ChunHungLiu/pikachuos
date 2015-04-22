@@ -1465,6 +1465,7 @@ buffer_drop(struct fs *fs, daddr_t block, size_t size)
 		result = buffer_mark_busy(b);
 		if (result == EDEADBUF) {
 			/* someone else already dropped it */
+			lock_release(buffer_lock);
 			return;
 		}
 		KASSERT(result == 0);
