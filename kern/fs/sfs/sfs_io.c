@@ -522,7 +522,7 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 	// Journal this!!!
 	ioptr = buffer_map(iobuf);
 	void *old_data = ioptr + blockoffset;
-	sfs_jphys_write(jentry_meta_update(diskblock, blockoffset, old_data, data));
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_meta_update(diskblock, blockoffset, old_data, data));
 
 	ioptr = buffer_map(iobuf);
 	if (rw == UIO_READ) {

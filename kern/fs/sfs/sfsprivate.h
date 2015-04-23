@@ -155,5 +155,16 @@ int sfs_jphys_startwriting(struct sfs_fs *sfs);
 void sfs_jphys_unstartwriting(struct sfs_fs *sfs);
 void sfs_jphys_stopwriting(struct sfs_fs *sfs);
 
+sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
+		struct sfs_jphys_writecontext *ctx,
+		void *rec);
+void *jentry_block_alloc(daddr_t disk_addr, 
+	daddr_t ref_addr, size_t offset_addr);
+void *jentry_inode_link(daddr_t disk_addr, 
+	uint16_t old_linkcount, uint16_t new_linkcount);
+void *jentry_meta_update(daddr_t disk_addr, size_t offset_addr, 
+	void *old_data, void *new_data);
+
+
 
 #endif /* _SFSPRIVATE_H_ */
