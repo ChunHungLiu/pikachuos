@@ -460,6 +460,7 @@ sfs_makeobj(struct sfs_fs *sfs, int type, struct sfs_vnode **ret)
 	 * number is the block number, so just get a block.)
 	 */
 
+	//       V Journalled!
 	result = sfs_balloc(sfs, &ino, NULL);
 	if (result) {
 		return result;

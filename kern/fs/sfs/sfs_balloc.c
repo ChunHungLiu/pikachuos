@@ -94,6 +94,9 @@ sfs_balloc(struct sfs_fs *sfs, daddr_t *diskblock, struct buf **bufret)
 		lock_release(sfs->sfs_freemaplock);
 		return result;
 	}
+	// We have successfully allocated a block in the freemap. Journal it
+	sfs_jphys_write(block_alloc(*diskblock, NULL, NULL));
+
 	sfs->sfs_freemapdirty = true;
 
 	lock_release(sfs->sfs_freemaplock);

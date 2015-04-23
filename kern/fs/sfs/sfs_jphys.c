@@ -471,8 +471,14 @@ sfs_jphys_write(struct sfs_fs *sfs,
 {
 	struct sfs_jphys *jp = sfs->sfs_jphys;
 
+	// Debugging
+	kprintf("Writing ")
+
 	/* Must be in writing mode before adding journal entries. */
 	KASSERT(jp->jp_writermode);
+
+	// TODO free the struct afterwards
+	kfree(rec);
 
 	return sfs_jphys_write_internal(sfs, callback, ctx, SFS_JPHYS_CLIENT,
 					code, rec, len);
