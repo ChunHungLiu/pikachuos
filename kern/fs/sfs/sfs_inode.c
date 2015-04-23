@@ -466,6 +466,14 @@ sfs_makeobj(struct sfs_fs *sfs, int type, struct sfs_vnode **ret)
 		return result;
 	}
 
+	// We have space for an inode! And make sure I understand how this function
+	// is supposed to work
+	// This may not actually go here. We may be able to move this further down if the dino buffer is not dirty
+	//KASSERT(dino->sfi_type == type);
+	KASSERT(dino->sfi_size == 0);
+	KASSERT(dino->sfi_linkcount == 0);
+	sfs_jphys_write(jentry_inode_create(ino, type, dino->sfi_size, dino->sfi_linkcount));
+
 	/*
 	 * Now load a vnode for it.
 	 */

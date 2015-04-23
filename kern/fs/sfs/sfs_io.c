@@ -519,6 +519,11 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 		return result;
 	}
 
+	// Journal this!!!
+	ioptr = buffer_map(iobuf);
+	void *old_data = ioptr + blockoffset;
+	sfs_jphys_write(jentry_meta_update(diskblock, blockoffset, old_data, data));
+
 	ioptr = buffer_map(iobuf);
 	if (rw == UIO_READ) {
 		/* Copy out the selected region */
