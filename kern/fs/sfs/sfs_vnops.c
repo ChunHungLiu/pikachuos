@@ -676,6 +676,9 @@ static
 int
 sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 {
+	struct sfs_fs *sfs = dir->vn_fs->fs_data;
+	// Uh... file and dir should belong to the same filesystem
+	KASSERT(dir->vn_fs->fs_data == file->vn_fs->fs_data);
 	struct sfs_vnode *sv = dir->vn_data;
 	struct sfs_vnode *f = file->vn_data;
 	struct sfs_dinode *inodeptr;
