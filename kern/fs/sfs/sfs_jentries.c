@@ -72,6 +72,10 @@ void *jentry_block_alloc(daddr_t disk_addr,
 	return (void *)record;
 }
 
+/**
+ *  Log that the link count of the inode at `disk_addr` had been updated from
+ * `old_linkcount` to `new_linkcount`
+ */
 void *jentry_inode_link(daddr_t disk_addr, 
 	uint16_t old_linkcount, uint16_t new_linkcount)
 {
