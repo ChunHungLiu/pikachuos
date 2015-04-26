@@ -156,15 +156,18 @@ void sfs_jphys_unstartwriting(struct sfs_fs *sfs);
 void sfs_jphys_stopwriting(struct sfs_fs *sfs);
 
 sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
-		struct sfs_jphys_writecontext *ctx,
-		void *rec);
+		struct sfs_jphys_writecontext *ctx,	void *rec);
+sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, 
+		struct sfs_fs *sfs,	struct sfs_jphys_writecontext *ctx, void *rec);
 void *jentry_block_alloc(daddr_t disk_addr, 
 	daddr_t ref_addr, size_t offset_addr);
 void *jentry_inode_link(daddr_t disk_addr, 
 	uint16_t old_linkcount, uint16_t new_linkcount);
 void *jentry_meta_update(daddr_t disk_addr, size_t offset_addr, 
 	void *old_data, void *new_data);
+void *jentry_block_dealloc(daddr_t disk_addr);
+void *jentry_truncate(daddr_t inode, daddr_t start, daddr_t end);
 
-
+#define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, args)
 
 #endif /* _SFSPRIVATE_H_ */

@@ -987,6 +987,8 @@ sfs_discard(struct sfs_vnode *sv,
 	uint32_t lo, hi, substart, subend;
 	int result;
 
+	sfs_jphys_write_wrapper(sfs, NULL, jentry_truncate(sv->sv_ino, startfileblock, endfileblock));
+
 	inodeptr = sfs_dinode_map(sv);
 
 	/*

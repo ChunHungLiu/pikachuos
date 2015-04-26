@@ -121,6 +121,9 @@ sfs_bfree_prelocked(struct sfs_fs *sfs, daddr_t diskblock)
 {
 	KASSERT(lock_do_i_hold(sfs->sfs_freemaplock));
 
+	// Block is getting deallocated. Journal this!!!
+	sfs_jphys_write_wrapper(sfs, NULL, jentry_block_dealloc(diskblock));
+
 	bitmap_unmark(sfs->sfs_freemap, diskblock);
 	sfs->sfs_freemapdirty = true;
 }

@@ -477,6 +477,8 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 	bool doalloc;
 	int result;
 
+	kprintf("%d\n", len);
+
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 
 	/* Figure out which block of the vnode (directory, whatever) this is */
