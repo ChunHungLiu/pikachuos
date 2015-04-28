@@ -1258,17 +1258,21 @@ sfs_jiter_doprev(struct sfs_fs *sfs, struct sfs_jiter *ji)
 {
 	int result;
 
-	do {
+	while (1) {
 		result = sfs_jiter_one_prev(sfs, ji);
 		if (result) {
 			return result;
+		}
+
+		if (ji->ji_seeall || ji->ji_class != SFS_JPHYS_CONTAINER) {
+			break;
 		}
 
 		if (sfs_jposition_eq(&ji->ji_pos, &ji->ji_tailpos)) {
 			ji->ji_done = true;
 			return 0;
 		}
-	} while (!ji->ji_seeall && ji->ji_class == SFS_JPHYS_CONTAINER);
+	}
 	return 0;
 }
 
