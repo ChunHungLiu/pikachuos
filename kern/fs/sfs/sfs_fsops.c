@@ -475,6 +475,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (result) {
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sfs->sfs_freemaplock);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return result;
 	}
@@ -488,6 +489,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 			SFS_MAGIC);
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sfs->sfs_freemaplock);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return EINVAL;
 	}
@@ -509,6 +511,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (sfs->sfs_freemap == NULL) {
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sfs->sfs_freemaplock);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return ENOMEM;
 	}
@@ -516,6 +519,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (result) {
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sfs->sfs_freemaplock);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return result;
 	}
@@ -534,6 +538,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (result) {
 		unreserve_fsmanaged_buffers(2, SFS_BLOCKSIZE);
 		drop_fs_buffers(&sfs->sfs_absfs);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return result;
 	}
@@ -558,6 +563,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (result) {
 		unreserve_fsmanaged_buffers(2, SFS_BLOCKSIZE);
 		drop_fs_buffers(&sfs->sfs_absfs);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return result;
 	}
