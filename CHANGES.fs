@@ -9,6 +9,7 @@ code for 2.x. I am not even including its old changelog entries.)
 
 (Also see CHANGES.vm, CHANGES.syscalls, CHANGES.locks, and CHANGES.)
 
+20150428 dholland	Make dumpsfs -j work again. Reported by Rebecca Chen.
 20150428 dholland	Avoid stopping one record too early when iterating
 ........		the journal backward. From Rebecca Chen.
 20150428 dholland       Make journal iterator rewinding work; and check the
