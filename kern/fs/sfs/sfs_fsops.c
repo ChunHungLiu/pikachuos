@@ -549,6 +549,74 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	/* Call your recovery code here */
 	/********************************/
 
+	struct sfs_jiter *ji;
+	unsigned type;
+	sfs_lsn_t lsn;
+	void *recptr;
+	size_t reclen;
+	reserve_buffers(SFS_BLOCKSIZE);
+
+	result = sfs_jiter_fwdcreate(sfs, &ji);
+	if (result)
+		panic("Fuck everything is broken");
+	while (!sfs_jiter_done(ji)) {
+		type = sfs_jiter_type(ji);
+		lsn = sfs_jiter_lsn(ji);
+		recptr = sfs_jiter_rec(ji, &reclen);
+		kprintf("We have a record of type %u\n", type);
+		(void) lsn;
+		(void) recptr;
+
+		switch (type) {
+/* Autogenerate cases: sfs_jentries.py */
+		case TRUNCATE:
+			reclen = sizeof(struct truncate_args);
+			kprintf("TRUNCATE(code=%d, inode_addr=%d, start_block=%d, end_block=%d)",
+				((struct truncate_args*)recptr)->code,
+				((struct truncate_args*)recptr)->inode_addr,
+				((struct truncate_args*)recptr)->start_block,
+				((struct truncate_args*)recptr)->end_block);
+			break;
+		case BLOCK_ALLOC:
+			reclen = sizeof(struct block_alloc_args);
+			kprintf("BLOCK_ALLOC(code=%d, disk_addr=%d, ref_addr=%d, offset_addr=%d)",
+				((struct block_alloc_args*)recptr)->code,
+				((struct block_alloc_args*)recptr)->disk_addr,
+				((struct block_alloc_args*)recptr)->ref_addr,
+				((struct block_alloc_args*)recptr)->offset_addr);
+			break;
+		case META_UPDATE:
+			reclen = sizeof(struct meta_update_args);
+			kprintf("META_UPDATE(code=%d, disk_addr=%d, offset_addr=%d, old_data=%p, new_data=%p)",
+				((struct meta_update_args*)recptr)->code,
+				((struct meta_update_args*)recptr)->disk_addr,
+				((struct meta_update_args*)recptr)->offset_addr,
+				((struct meta_update_args*)recptr)->old_data,
+				((struct meta_update_args*)recptr)->new_data);
+			break;
+		case INODE_LINK:
+			reclen = sizeof(struct inode_link_args);
+			kprintf("INODE_LINK(code=%d, disk_addr=%d, old_linkcount=%d, new_linkcount=%d)",
+				((struct inode_link_args*)recptr)->code,
+				((struct inode_link_args*)recptr)->disk_addr,
+				((struct inode_link_args*)recptr)->old_linkcount,
+				((struct inode_link_args*)recptr)->new_linkcount);
+			break;
+		case BLOCK_DEALLOC:
+			reclen = sizeof(struct block_dealloc_args);
+			kprintf("BLOCK_DEALLOC(code=%d, disk_addr=%d)",
+				((struct block_dealloc_args*)recptr)->code,
+				((struct block_dealloc_args*)recptr)->disk_addr);
+			break;
+		}
+
+		result = sfs_jiter_next(sfs, ji);
+		if (result) 
+			panic("Fuck everything is broken");
+	}
+	sfs_jiter_destroy(ji);
+	unreserve_buffers(SFS_BLOCKSIZE);
+
 	/* Done with container-level scanning */
 	sfs_jphys_stopreading(sfs);
 

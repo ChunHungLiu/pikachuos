@@ -6,7 +6,7 @@ import shutil
 struct_start = re.compile("struct ([a-z_]+)_args {")
 struct_end = re.compile("};")
 
-infile = open("sfs_jentries.c", "rb")
+infile = open("../../include/kern/sfs.h", "rb")
 outfile = open("temp", "wb")
 
 
@@ -19,7 +19,7 @@ def main():
 		#line = line[:-1]
 		if output:
 			write(line)
-		if struct_start.match(line):
+		if struct_start.match(line) and "_args" in line:
 			struct = struct_start.search(line).group(1)
 			structs[struct] = []
 		elif struct and struct_end.match(line):
@@ -55,7 +55,7 @@ def gen_cases(structs):
 				print_format.append("%s=%%p" % name)
 			else:
 				print_format.append("%s=%%d" % name)
-			print_args.append("((struct %s_args*)rec)->%s" % (struct, name))
+			print_args.append("((struct %s_args*)recptr)->%s" % (struct, name))
 		fmt = {
 			"struct_name": struct,
 			"struct_name_upper": struct.upper(),
@@ -63,7 +63,7 @@ def gen_cases(structs):
 			"print_args": ",\n\t\t\t\t".join(print_args)
 		}
 		write("""		case %(struct_name_upper)s:
-			len = sizeof(struct %(struct_name)s_args);
+			reclen = sizeof(struct %(struct_name)s_args);
 			kprintf("%(struct_name_upper)s(%(print_format)s)",
 				%(print_args)s);
 			break;\n""" % fmt)

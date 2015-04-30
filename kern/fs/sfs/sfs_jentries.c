@@ -8,45 +8,40 @@
 
 /* RUN 'sfs_jentries.py' after modifying any of the structs below */
 
-#define BLOCK_ALLOC	1
-#define	INODE_LINK  2
-#define META_UPDATE 3
-#define BLOCK_DEALLOC 4
-#define TRUNCATE	5
 
-struct block_alloc_args {
-	unsigned code;
-	daddr_t disk_addr;
-	daddr_t ref_addr;
-	size_t offset_addr;
-};
+// struct block_alloc_args {
+// 	unsigned code;
+// 	daddr_t disk_addr;
+// 	daddr_t ref_addr;
+// 	size_t offset_addr;
+// };
 
-struct inode_link_args {
-	unsigned code;
-	daddr_t disk_addr;
-	uint16_t old_linkcount;
-	uint16_t new_linkcount;
-};
+// struct inode_link_args {
+// 	unsigned code;
+// 	daddr_t disk_addr;
+// 	uint16_t old_linkcount;
+// 	uint16_t new_linkcount;
+// };
 
-struct meta_update_args {
-	unsigned code;
-	daddr_t disk_addr;
-	size_t offset_addr;
-	void *old_data;
-	void *new_data;
-};
+// struct meta_update_args {
+// 	unsigned code;
+// 	daddr_t disk_addr;
+// 	size_t offset_addr;
+// 	void *old_data;
+// 	void *new_data;
+// };
 
-struct block_dealloc_args {
-	unsigned code;
-	daddr_t disk_addr;
-};
+// struct block_dealloc_args {
+// 	unsigned code;
+// 	daddr_t disk_addr;
+// };
 
-struct truncate_args {
-	unsigned code;
-	daddr_t inode_addr;
-	daddr_t start_block;
-	daddr_t end_block;
-};
+// struct truncate_args {
+// 	unsigned code;
+// 	daddr_t inode_addr;
+// 	daddr_t start_block;
+// 	daddr_t end_block;
+// };
 
 /* Generally won't need to modify anything below this */
 

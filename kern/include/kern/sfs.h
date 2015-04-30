@@ -67,6 +67,14 @@
 #define SFS_TYPE_FILE     1
 #define SFS_TYPE_DIR      2
 
+// We start from 3 because 0, 1, 2 are reserved
+
+#define BLOCK_ALLOC	3
+#define	INODE_LINK  4
+#define META_UPDATE 5
+#define BLOCK_DEALLOC 6
+#define TRUNCATE	7
+
 /*
  * On-disk superblock
  */
@@ -156,5 +164,38 @@ struct sfs_jphys_trim {
 	uint64_t jt_taillsn;			/* Tail LSN */
 };
 
+struct block_alloc_args {
+	unsigned code;
+	daddr_t disk_addr;
+	daddr_t ref_addr;
+	size_t offset_addr;
+};
+
+struct inode_link_args {
+	unsigned code;
+	daddr_t disk_addr;
+	uint16_t old_linkcount;
+	uint16_t new_linkcount;
+};
+
+struct meta_update_args {
+	unsigned code;
+	daddr_t disk_addr;
+	size_t offset_addr;
+	void *old_data;
+	void *new_data;
+};
+
+struct block_dealloc_args {
+	unsigned code;
+	daddr_t disk_addr;
+};
+
+struct truncate_args {
+	unsigned code;
+	daddr_t inode_addr;
+	daddr_t start_block;
+	daddr_t end_block;
+};
 
 #endif /* _KERN_SFS_H_ */
