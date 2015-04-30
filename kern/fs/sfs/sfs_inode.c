@@ -168,7 +168,7 @@ sfs_dinode_mark_dirty(struct sfs_vnode *sv)
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 
 	KASSERT(sv->sv_dinobuf != NULL);
-	buffer_mark_dirty(sv->sv_dinobuf);
+	buffer_mark_dirty(sv->sv_dinobuf);	// dinode_mark_dirty: Does not need to be journalled.
 }
 
 /*
@@ -376,8 +376,12 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 	 */
 	if (forcetype != SFS_TYPE_INVAL) {
 		KASSERT(dino->sfi_type == SFS_TYPE_INVAL);
+		sfs_jphys_write_wrapper(sfs, NULL,
+			jentry_inode_update_type(	ino,	// inode_addr
+										SFS_TYPE_INVAL,	// old_data
+										forcetype));	// new_data
 		dino->sfi_type = forcetype;
-		buffer_mark_dirty(dinobuf);
+		buffer_mark_dirty(dinobuf);	// Journalled
 	}
 
 	/*

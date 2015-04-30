@@ -61,7 +61,7 @@ sfs_clearblock(struct sfs_fs *sfs, daddr_t block, struct buf **bufret)
 	ptr = buffer_map(buf);
 	bzero(ptr, SFS_BLOCKSIZE);
 	buffer_mark_valid(buf);
-	buffer_mark_dirty(buf);
+	buffer_mark_dirty(buf);	// a4: sfs_clearblock: does not need journalling
 
 	if (bufret != NULL) {
 		*bufret = buf;

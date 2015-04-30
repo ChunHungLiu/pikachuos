@@ -182,6 +182,7 @@ struct meta_update_args {
 	unsigned code;
 	daddr_t disk_addr;
 	size_t offset_addr;
+	size_t data_len;
 	void *old_data;
 	void *new_data;
 };
@@ -196,6 +197,19 @@ struct truncate_args {
 	daddr_t inode_addr;
 	daddr_t start_block;
 	daddr_t end_block;
+};
+
+struct block_write_args {
+	unsigned code;
+	daddr_t written_addr;
+	uint new_checksum;
+};
+
+struct inode_update_type_args {
+	unsigned code;
+	daddr_t inode_addr;
+	int old_type;
+	int new_type;
 };
 
 #endif /* _KERN_SFS_H_ */

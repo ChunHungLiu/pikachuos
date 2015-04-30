@@ -198,6 +198,8 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 	daddr_t diskblock;
 	uint32_t fileblock;
 	int result;
+	unsigned old_checksum = 0;
+	unsigned new_checksum = 0;
 
 	/* Allocate missing blocks if and only if we're writing */
 	bool doalloc = (uio->uio_rw==UIO_WRITE);
@@ -245,11 +247,14 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 		return result;
 	}
 
+	new_checksum = checksum(iobuffer);
+	sfs_jphys_write_wrapper(sfs, NULL, jentry_block_write(diskblock, new_checksum));
+
 	/*
 	 * If it was a write, mark the modified block dirty.
 	 */
 	if (uio->uio_rw == UIO_WRITE) {
-		buffer_mark_dirty(iobuffer);
+		buffer_mark_dirty(iobuffer);	// Journalled
 	}
 
 	buffer_release(iobuffer);
@@ -274,6 +279,8 @@ sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
 	uint32_t fileblock;
 	int result;
 	bool doalloc = (uio->uio_rw==UIO_WRITE);
+	unsigned old_checksum = 0;
+	unsigned new_checksum = 0;
 
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 
@@ -319,9 +326,12 @@ sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
 		return result;
 	}
 
+	new_checksum = checksum(iobuf);
+	sfs_jphys_write_wrapper(sfs, NULL, jentry_block_write(diskblock, new_checksum));
+
 	if (uio->uio_rw == UIO_WRITE) {
 		buffer_mark_valid(iobuf);
-		buffer_mark_dirty(iobuf);
+		buffer_mark_dirty(iobuf);	// Journalled
 	}
 
 	buffer_release(iobuf);
@@ -534,7 +544,7 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 	else {
 		/* Update the selected region */
 		memcpy(ioptr + blockoffset, data, len);
-		buffer_mark_dirty(iobuf);
+		buffer_mark_dirty(iobuf);	// Journalled (meta_update)
 
 		/* Update the vnode size if needed */
 		endpos = actualpos + len;
