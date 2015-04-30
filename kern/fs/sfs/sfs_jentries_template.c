@@ -6,6 +6,11 @@
 #include <sfs.h>
 #include "sfsprivate.h"
 
+uint32_t checksum(struct buf *input) {
+	(void)input;
+	return 0;
+}
+
 /* Generally won't need to modify anything below this */
 
 #undef sfs_jphys_write_wrapper

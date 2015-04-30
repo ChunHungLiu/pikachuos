@@ -74,6 +74,8 @@
 #define META_UPDATE 5
 #define BLOCK_DEALLOC 6
 #define TRUNCATE	7
+#define BLOCK_WRITE 8
+#define INODE_UPDATE_TYPE 9
 
 /*
  * On-disk superblock
@@ -202,7 +204,7 @@ struct truncate_args {
 struct block_write_args {
 	unsigned code;
 	daddr_t written_addr;
-	uint new_checksum;
+	uint32_t new_checksum;
 };
 
 struct inode_update_type_args {

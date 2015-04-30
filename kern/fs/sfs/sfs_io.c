@@ -198,7 +198,6 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 	daddr_t diskblock;
 	uint32_t fileblock;
 	int result;
-	unsigned old_checksum = 0;
 	unsigned new_checksum = 0;
 
 	/* Allocate missing blocks if and only if we're writing */
@@ -279,7 +278,6 @@ sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
 	uint32_t fileblock;
 	int result;
 	bool doalloc = (uio->uio_rw==UIO_WRITE);
-	unsigned old_checksum = 0;
 	unsigned new_checksum = 0;
 
 	KASSERT(lock_do_i_hold(sv->sv_lock));
@@ -534,7 +532,12 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 	// Journal this!!!
 	ioptr = buffer_map(iobuf);
 	void *old_data = ioptr + blockoffset;
-	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_meta_update(diskblock, blockoffset, old_data, data));
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, 
+		jentry_meta_update(	diskblock, 
+							blockoffset, 
+							len,
+							old_data, 
+							data));
 
 	ioptr = buffer_map(iobuf);
 	if (rw == UIO_READ) {
