@@ -380,11 +380,21 @@ sfs_fs_create(void)
 		goto cleanup_object;
 	}
 
+	sfs->sfs_transactions = array_create();
+	if (sfs->sfs_transactions == NULL) {
+		goto cleanup_trans;
+	}
+
 	/* freemap */
 	sfs->sfs_freemap = NULL;
 	sfs->sfs_freemapdirty = false;
 
 	/* locks */
+	// sfs->trans_lock = lock_create("trans_lock");
+	// if (sfs->sfs_vnlock == NULL) {
+	// 	goto cleanup_translock;
+	// }
+
 	sfs->sfs_vnlock = lock_create("sfs_vnlock");
 	if (sfs->sfs_vnlock == NULL) {
 		goto cleanup_vnodes;
@@ -412,8 +422,12 @@ cleanup_freemaplock:
 	lock_destroy(sfs->sfs_freemaplock);
 cleanup_vnlock:
 	lock_destroy(sfs->sfs_vnlock);
+// cleanup_translock:
+// 	lock_destroy(sfs->trans_lock);
 cleanup_vnodes:
 	vnodearray_destroy(sfs->sfs_vnodes);
+cleanup_trans:
+	array_destroy(sfs->sfs_transactions);
 cleanup_object:
 	kfree(sfs);
 fail:

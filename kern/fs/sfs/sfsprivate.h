@@ -166,6 +166,8 @@ void *jentry_inode_link(daddr_t disk_addr,
 void *jentry_meta_update(daddr_t disk_addr, size_t offset_addr, size_t data_len, void * old_data, void * new_data);
 void *jentry_block_dealloc(daddr_t disk_addr);
 void *jentry_truncate(daddr_t inode, daddr_t start, daddr_t end);
+void *jentry_trans_commit(int trans_type, int id);
+void *jentry_trans_begin(int trans_type, int id);
 void *jentry_inode_update_type(daddr_t inode_addr, int old_type, int new_type);
 void *jentry_block_write(daddr_t written_addr, uint32_t new_checksum);
 uint32_t checksum(struct buf *input);
