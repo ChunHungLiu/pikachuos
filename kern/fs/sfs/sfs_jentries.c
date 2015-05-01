@@ -49,6 +49,7 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	unsigned code = *(int *)recptr;
 	size_t reclen;
 	uint32_t odometer;
+	sfs_lsn_t lsn;
 
 	if (!sfs_jphys_iswriting(sfs)) {
 		kprintf("Not writing\n");
@@ -100,7 +101,11 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 			break;
 	}
 
-	sfs_lsn_t lsn = sfs_jphys_write(sfs, /*callback*/ NULL, ctx, code, recptr, reclen);
+	if (ctx == NULL){
+		lsn = sfs_jphys_write(sfs, /*callback*/ NULL, ctx, code, recptr, reclen);
+	} else {
+		lsn = sfs_jphys_write(sfs, sfs_trans_callback, ctx, code, recptr, reclen);
+	}
 
 	kfree(recptr);
 

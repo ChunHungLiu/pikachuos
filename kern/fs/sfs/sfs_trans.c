@@ -12,23 +12,22 @@
 
 int sfs_trans_begin(struct sfs_fs* sfs, int trans_type) {
 	// create trans, add it to table
-	sfs_lsn_t cur_lsn;
-	// int err;
-
+	sfs_jphys_write_wrapper(sfs, 
+		(struct sfs_jphys_writecontext *)0xdeadbeef, jentry_trans_begin(trans_type));
+	
+	return 0;
+}
+void sfs_trans_callback(struct sfs_fs *sfs, sfs_lsn_t newlsn,
+	struct sfs_jphys_writecontext *ctx) {
+	(void) ctx;
 	struct trans* new_trans = kmalloc(sizeof(struct trans));
 
-	cur_lsn = sfs_jphys_write_wrapper(sfs, NULL, jentry_trans_begin(trans_type));
 	new_trans->id = curproc->pid;
-	new_trans->first_lsn = cur_lsn;
+	new_trans->first_lsn = newlsn;
 
 	lock_acquire(sfs->trans_lock);
 	array_add(sfs->sfs_transactions, new_trans, NULL);
 	lock_release(sfs->trans_lock);
-
-	// if (err)
-	// 	return err;
-	return new_trans->id;
-
 }
 
 int sfs_trans_commit(struct sfs_fs* sfs, int trans_type) {
