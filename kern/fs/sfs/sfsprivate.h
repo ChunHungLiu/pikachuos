@@ -154,6 +154,8 @@ void sfs_jphys_stopreading(struct sfs_fs *sfs);
 int sfs_jphys_startwriting(struct sfs_fs *sfs);
 void sfs_jphys_unstartwriting(struct sfs_fs *sfs);
 void sfs_jphys_stopwriting(struct sfs_fs *sfs);
+bool sfs_jphys_isreading(struct sfs_fs *sfs);
+bool sfs_jphys_iswriting(struct sfs_fs *sfs);
 
 sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 		struct sfs_jphys_writecontext *ctx,	void *rec);
@@ -169,9 +171,9 @@ void *jentry_truncate(daddr_t inode, daddr_t start, daddr_t end);
 void *jentry_trans_commit(int trans_type, int id);
 void *jentry_trans_begin(int trans_type, int id);
 void *jentry_inode_update_type(daddr_t inode_addr, int old_type, int new_type);
-void *jentry_block_write(daddr_t written_addr, uint32_t new_checksum);
+void *jentry_block_write(daddr_t written_addr, uint32_t new_checksum, bool new_alloc);
 void *jentry_resize(daddr_t inode_addr, size_t old_size, size_t new_size);
-uint32_t checksum(struct buf *input);
+uint32_t checksum(unsigned char *data);
 
 #define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
 

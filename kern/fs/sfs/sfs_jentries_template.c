@@ -6,9 +6,19 @@
 #include <sfs.h>
 #include "sfsprivate.h"
 
-uint32_t checksum(struct buf *input) {
-	(void)input;
-	return 0;
+#define MOD_ADLER 65521
+
+uint32_t checksum(unsigned char *data) {
+    uint32_t a = 1, b = 0;
+    size_t index;
+ 
+    /* Process each byte of the data in order */
+    for (index = 0; index < SFS_BLOCKSIZE; ++index) {
+        a = (a + data[index]) % MOD_ADLER;
+        b = (b + a) % MOD_ADLER;
+    }
+ 
+    return (b << 16) | a;
 }
 
 /* Generally won't need to modify anything below this */
@@ -17,6 +27,11 @@ uint32_t checksum(struct buf *input) {
 
 sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, const char* func,
 		struct sfs_fs *sfs, struct sfs_jphys_writecontext *ctx, void *rec) {
+
+	if (!sfs_jphys_iswriting(sfs)) {
+		kfree(rec);
+		return 0;
+	}
 
 	sfs_lsn_t ret = sfs_jphys_write_wrapper(sfs, ctx, rec);
 	kprintf(" %s:%d:%s\n", file, line, func);
