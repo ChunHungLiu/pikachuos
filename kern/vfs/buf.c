@@ -1176,7 +1176,6 @@ buffer_evict(struct buf **ret)
 	return 0;
 }
 
-static
 struct buf *
 buffer_find(struct fs *fs, daddr_t physblock)
 {

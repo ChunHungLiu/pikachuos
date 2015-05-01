@@ -78,6 +78,9 @@ int sfs_checkpoint(struct sfs_fs* sfs) {
 		if (buffer_ptr == NULL)
 			continue;
 		data_ptr = (struct b_fsdata *)buffer_get_fsdata(buffer_ptr);
+		if (sfs_block_is_journal(sfs, data_ptr->diskblock)) {
+			continue;
+		}
 		if (data_ptr->oldest_lsn < oldest_lsn)
 			oldest_lsn = data_ptr->oldest_lsn;
 	}
@@ -85,10 +88,10 @@ int sfs_checkpoint(struct sfs_fs* sfs) {
 
 	// Trim!
 	if (oldest_lsn == 100000) {
-		sfs_jphys_trim(sfs, sfs_jphys_peeknextlsn(sfs));
-	} else {
-		sfs_jphys_trim(sfs, oldest_lsn);
+		oldest_lsn = sfs_jphys_peeknextlsn(sfs);
 	}
+	kprintf("........TRIM at: %d", oldest_lsn);
+	sfs_jphys_trim(sfs, oldest_lsn);
 
 	// We sucessfully took a checkpoint! Clear the odometer.
 	sfs_jphys_clearodometer(sfs->sfs_jphys);

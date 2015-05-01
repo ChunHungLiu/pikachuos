@@ -662,7 +662,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 
 	/* Update the linkcount of the new file */
 	// Journal this!!!
-	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(ino, new_dino->sfi_linkcount, new_dino->sfi_linkcount + 1));
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(newguy->sv_ino, new_dino->sfi_linkcount, new_dino->sfi_linkcount + 1));
 	new_dino->sfi_linkcount++;
 
 	/* and consequently mark it dirty. */
