@@ -17,11 +17,11 @@ uint32_t checksum(struct buf *input) {
 
 #undef sfs_jphys_write_wrapper
 
-sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line,
+sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, const char* func,
 		struct sfs_fs *sfs, struct sfs_jphys_writecontext *ctx, void *rec) {
 
 	sfs_lsn_t ret = sfs_jphys_write_wrapper(sfs, ctx, rec);
-	kprintf(" %s:%d\n", file, line);
+	kprintf(" %s:%d:%s\n", file, line, func);
 	return ret;
 }
 
@@ -90,6 +90,14 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 				((struct block_write_args*)recptr)->written_addr,
 				((struct block_write_args*)recptr)->new_checksum);
 			break;
+		case RESIZE:
+			reclen = sizeof(struct resize_args);
+			kprintf("RESIZE(code=%d, inode_addr=%d, old_size=%d, new_size=%d)",
+				((struct resize_args*)recptr)->code,
+				((struct resize_args*)recptr)->inode_addr,
+				((struct resize_args*)recptr)->old_size,
+				((struct resize_args*)recptr)->new_size);
+			break;
 	}
 
 	sfs_lsn_t lsn = sfs_jphys_write(sfs, /*callback*/ NULL, ctx, code, recptr, reclen);
@@ -99,7 +107,7 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	return lsn;
 }
 
-#define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, args)
+#define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
 
 void *jentry_block_alloc(daddr_t disk_addr, daddr_t ref_addr, size_t offset_addr)
 {
@@ -187,6 +195,19 @@ void *jentry_block_write(daddr_t written_addr, uint32_t new_checksum)
 	record->code = BLOCK_WRITE;
 	record->written_addr = written_addr;
 	record->new_checksum = new_checksum;
+
+	return (void *)record;
+}
+
+void *jentry_resize(daddr_t inode_addr, size_t old_size, size_t new_size)
+{
+	struct resize_args *record;
+
+	record = kmalloc(sizeof(struct resize_args));
+	record->code = RESIZE;
+	record->inode_addr = inode_addr;
+	record->old_size = old_size;
+	record->new_size = new_size;
 
 	return (void *)record;
 }

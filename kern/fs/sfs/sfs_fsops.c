@@ -209,11 +209,13 @@ sfs_attachbuf(struct fs *fs, daddr_t diskblock, struct buf *buf)
 {
 	struct sfs_fs *sfs = fs->fs_data;
 	void *olddata;
+	struct fs_data *newdata = kmalloc(sizeof(struct fs_data));
 
-	(void)sfs;
-	(void)diskblock;
+	newdata->sfs = sfs;
+	newdata->diskblock = diskblock;
+	newdata->oldest_lsn = 0;
 
-	olddata = buffer_set_fsdata(buf, NULL);
+	olddata = buffer_set_fsdata(buf, (void*)newdata);
 	KASSERT(olddata == NULL);
 
 	return 0;
@@ -230,7 +232,7 @@ sfs_detachbuf(struct fs *fs, daddr_t diskblock, struct buf *buf)
 	(void)diskblock;
 
 	bufdata = buffer_set_fsdata(buf, NULL);
-	KASSERT(bufdata == NULL);
+	kfree(bufdata);
 }
 
 /*
