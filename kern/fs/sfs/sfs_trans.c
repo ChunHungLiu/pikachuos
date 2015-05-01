@@ -90,7 +90,8 @@ int sfs_checkpoint(struct sfs_fs* sfs) {
 	if (oldest_lsn == 100000) {
 		oldest_lsn = sfs_jphys_peeknextlsn(sfs);
 	}
-	kprintf("........TRIM at: %d", oldest_lsn);
+
+	kprintf("Trim to %d\n", oldest_lsn);
 	sfs_jphys_trim(sfs, oldest_lsn);
 
 	// We sucessfully took a checkpoint! Clear the odometer.

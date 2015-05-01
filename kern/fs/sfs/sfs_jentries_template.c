@@ -57,7 +57,7 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 
 	// do checkpoint here.
 	odometer = sfs_jphys_getodometer(sfs->sfs_jphys);
-	if (odometer > 10) {
+	if (odometer > 1) {
 		sfs_checkpoint(sfs);
 	}
 	// Debugging

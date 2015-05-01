@@ -238,7 +238,6 @@ int sys_execv(char* progname, char** args, int *retval, bool iskernel) {
 		} else {
 			copyinstr((userptr_t)args[i], kern_args[i], ARG_MAX, NULL);
 		}
-		kprintf("Argument: %s\n", kern_args[i]);
 	}
 
 	// This is from runprogram 

@@ -3,20 +3,40 @@
 import subprocess
 import signal
 import sys
+import os
 from termcolor import colored
  
-def run(command):
-	print colored(command, 'red')
-	subprocess.call(command.split(' '))
+def run(command, print_start="unmatchable", print_end="unmatchable"):
+	print colored(command, "red", attrs=["bold"])
+	result = subprocess.Popen(command.split(" "), 
+		stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	do_print = False
+	for line in result.stderr:
+		if "warn" in line.lower():
+			print colored(line[:-1], "yellow", attrs=["bold"])
+	for line in result.stdout:
+		if "warn" in line.lower():
+			print colored(line[:-1], "yellow", attrs=["bold"])
+			continue
+		if print_start in line:
+			do_print = True
+		if do_print:
+			print line[:-1]
+		if print_end in line:
+			do_print = False
 
 def frack(params):
 	print "Testing: %s" % params
-	for doom in xrange(20):
+	for doom in xrange(1,2):
 		run('hostbin/host-mksfs LHD1.img test')
+
 		run('sys161 -D %d kernel mount sfs lhd1:; cd lhd1:;'
 			'p /testbin/frack do %s; q' % (doom, params))
+
 		run('sys161 kernel mount sfs lhd1:; cd lhd1:;'
-			'p /testbin/frack check %s; q' % (params))
+			'p /testbin/frack check %s; q' % (params),
+			print_start="OS/161 kernel: p /testbin/frack check",
+			print_end="Done.")
 
 def test(command):
 	pass
@@ -87,10 +107,12 @@ def main():
 	frack("genseq %d" % seed)
 
 def signal_term_handler(signal, frame):
-    print 'got SIGTERM'
+    print 'got SIGTERM or SIGINT'
+    os.system('stty sane')
     sys.exit(0)
  
-signal.signal(signal.SIGTERM, signal_term_handler)
 if __name__ == "__main__":
+	signal.signal(signal.SIGTERM, signal_term_handler)
+	signal.signal(signal.SIGINT, signal_term_handler)
 	main()
 

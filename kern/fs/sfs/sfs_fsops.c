@@ -456,9 +456,11 @@ operation_aborted(struct array* abort_list, sfs_lsn_t lsn)
 
 static
 int
-sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
+sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr, struct bitmap *userdata, struct bitmap *garbage) {
 	int result = 0;
 	int type = *((int*)recptr);
+	const char *operation[] = {"Undo", "Redo"};
+	(void)garbage;	// Throw away the garbage. Don't need it here
 
 	// data will contain the data for a block on disk. dinode will treat that data as an inode
 	void *data = kmalloc(SFS_BLOCKSIZE);
@@ -466,14 +468,29 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 
 	// Go ahead and load the data for changes that will need access to a block
 	if (type == INODE_LINK || type == META_UPDATE || type == RESIZE ||
-		type == INODE_UPDATE_TYPE) {
-		// Load in the vnode and dinode stuff. Disk address is the 3rd member in all of these
+		type == INODE_UPDATE_TYPE || type == BLOCK_WRITE) {
+
+		// Check if this is untouchable user data, and this operation was not
+		//  the last to touch it. If so, do nothing
 		int block = ((int*)recptr)[2];
+		if (bitmap_isset(userdata, block) && type != BLOCK_WRITE) {
+			return 0;
+		} else if (type == BLOCK_WRITE) {
+			// Even if this is untouchable, we still want to check that the
+			//  very last user write completed successfully
+			struct block_write_args *jentry = (struct block_write_args*)recptr;
+			if (!jentry->last_write) {
+				return 0;
+			}
+			// else, this was the last write to touch this block. Continue
+		}
+
+		// Load in the vnode and dinode stuff. Disk address is the 3rd member in all of these
 		result = sfs_readblock(&sfs->sfs_absfs, block, data, SFS_BLOCKSIZE);
 	}
 	kprintf("We have a recovery record of type: %d", type);
 
-	kprintf("    ");
+	kprintf("    %s: ", operation[redo]);
 	jentry_print(recptr);
 	kprintf("\n");
 
@@ -604,12 +621,18 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 			struct block_write_args *jentry = (struct block_write_args *)recptr;
 			unsigned block_checksum;
 
+			kprintf("  Data looks like:");
+			for (int b = 0; b < 8; b++)
+				kprintf(" %02x", (unsigned char)((unsigned char*)data)[b]);
+			kprintf("\n");
+
 			// Compute checksum
 			block_checksum = checksum(data);
 
 			// If may be garbage, zero out
 			bool new_alloc = jentry->new_alloc;
 			if (block_checksum != jentry->new_checksum) {
+				kprintf("  Checksum: got %d instead of %d\n", block_checksum, jentry->new_checksum);
 				kprintf("  Failed write in block %d detected. Data may be corrupted\n",
 					jentry->written_addr);
 				if (new_alloc) {
@@ -807,12 +830,45 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	size_t reclen;
 	reserve_buffers(SFS_BLOCKSIZE);
 	sfs_lsn_t curlsn;
+	unsigned num, i;
 
-	// Iterate through the journal once to
+	// Iterate backwards through the journal once to
+	// 1) Figure out the last WRITE to touch each block
+	//    mark that write operation accordingly
+	struct bitmap *written_later = bitmap_create(SFS_FS_NBLOCKS(sfs));
+	result = sfs_jiter_revcreate(sfs, &ji);
+	if (result)
+		panic("Oh no. Not again.");
+	while (!sfs_jiter_done(ji)) {
+		type = sfs_jiter_type(ji);
+		recptr = sfs_jiter_rec(ji, &reclen);
+
+		// Ok, we got a write entry
+		if (type == BLOCK_WRITE) {
+			struct block_write_args *jentry = (struct block_write_args*)recptr;
+			daddr_t block = jentry->written_addr;
+
+			// If the bitmap is not set, then no write to `block` happens after
+			//  this write. Mark that this block is written to later, and mark
+			//  the journal entry as well.
+			if (!bitmap_isset(written_later, block)) {
+				bitmap_mark(written_later, block);
+				jentry->last_write = true;
+			} else {
+				jentry->last_write = false;
+			}
+		}
+		result = sfs_jiter_next(sfs, ji);
+		if (result)
+			panic("Ha. And you thought you'd be able to sleep tonight");
+	}
+	// Free up our iterator
+	sfs_jiter_destroy(ji);
+
+	// Iterate forwards through the journal once to
 	// 1) Build transaction objects
 	// 2) Find untouchable user data
 	// 3) Find alloc-write pairs (potential garbage)
-	unsigned num, i;
 	struct bitmap *userdata = bitmap_create(SFS_FS_NBLOCKS(sfs));
 	struct bitmap *garbage  = bitmap_create(SFS_FS_NBLOCKS(sfs));
 
@@ -993,7 +1049,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		curlsn = sfs_jiter_lsn(ji);
 		recptr = sfs_jiter_rec(ji, &reclen);
 		redo = !operation_aborted(abort_list, curlsn);
-		result = sfs_recover_operation(sfs, redo, recptr);
+		result = sfs_recover_operation(sfs, redo, recptr, userdata, garbage);
 		if (result)
 			panic("stay calm and debug");
 		result = sfs_jiter_next(sfs, ji);

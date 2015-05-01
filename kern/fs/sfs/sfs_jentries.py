@@ -23,7 +23,7 @@ def parse_structs(file_obj):
 		elif struct_end.match(line) and struct:
 			struct = None
 		# Content of struct
-		elif struct and "\t" in line:
+		elif struct and "\t" in line and "ignore" not in line:
 			line = re.sub("[;\t\n]", "", line)
 			tokens = line.split(" ")
 			if "*" in line:
