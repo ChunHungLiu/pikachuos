@@ -373,7 +373,7 @@ sfs_blockobj_set(struct sfs_blockobj *bo, uint32_t offset, uint32_t newval)
 
 		struct buf *id_buf = bo->bo_idblock.id_buf;
 		idptr = buffer_map(id_buf);
-		struct fs_data *buf_metadata = (struct fs_data*)buffer_get_fsdata(id_buf);
+		struct b_fsdata *buf_metadata = (struct b_fsdata*)buffer_get_fsdata(id_buf);
 		sfs_jphys_write_wrapper(buf_metadata->sfs, NULL,
 			jentry_meta_update(buf_metadata->diskblock,
 							   offset,

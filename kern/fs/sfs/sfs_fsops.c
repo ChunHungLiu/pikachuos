@@ -209,7 +209,7 @@ sfs_attachbuf(struct fs *fs, daddr_t diskblock, struct buf *buf)
 {
 	struct sfs_fs *sfs = fs->fs_data;
 	void *olddata;
-	struct fs_data *newdata = kmalloc(sizeof(struct fs_data));
+	struct b_fsdata *newdata = kmalloc(sizeof(struct b_fsdata));
 
 	newdata->sfs = sfs;
 	newdata->diskblock = diskblock;

@@ -117,7 +117,7 @@ struct sfs_direntry {
 /*
  * Buffer metadata
  */
-struct fs_data {
+struct b_fsdata {
 	struct sfs_fs *sfs;
 	daddr_t diskblock;
 	uint64_t oldest_lsn;

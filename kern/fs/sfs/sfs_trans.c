@@ -10,14 +10,14 @@
 #include <array.h>
 #include "sfsprivate.h"
 
-int sfs_trans_begin(struct sfs_fs* sfs) {
+int sfs_trans_begin(struct sfs_fs* sfs, int trans_type) {
 	// create trans, add it to table
 	sfs_lsn_t cur_lsn;
 	// int err;
 
 	struct trans* new_trans = kmalloc(sizeof(struct trans));
 
-	cur_lsn = sfs_jphys_write_wrapper(sfs, NULL, jentry_trans_begin(1, curproc->pid));
+	cur_lsn = sfs_jphys_write_wrapper(sfs, NULL, jentry_trans_begin(trans_type, curproc->pid));
 	new_trans->id = curproc->pid;
 	new_trans->first_lsn = cur_lsn;
 
@@ -31,7 +31,7 @@ int sfs_trans_begin(struct sfs_fs* sfs) {
 
 }
 
-int sfs_trans_commit(struct sfs_fs* sfs) {
+int sfs_trans_commit(struct sfs_fs* sfs, int trans_type) {
 	// find trans, remove it from table, destroy it.
 	(void) sfs;
 	unsigned len, i;
@@ -48,7 +48,7 @@ int sfs_trans_commit(struct sfs_fs* sfs) {
 	}
 	lock_release(sfs->trans_lock);
 
-	sfs_jphys_write_wrapper(sfs, NULL, jentry_trans_commit(1, curproc->pid));
+	sfs_jphys_write_wrapper(sfs, NULL, jentry_trans_commit(trans_type, curproc->pid));
 	return 0;
 }
 
@@ -56,9 +56,10 @@ int sfs_checkpoint(struct sfs_fs* sfs) {
 	unsigned len, i;
 	struct trans* trans_ptr;
 	struct buf *buffer_ptr;
-	int oldest_lsn = 100000;
+	unsigned oldest_lsn = 100000;
 	struct lock *buffer_lock = buffer_get_lock();
 	struct array *dirty_buffers = buffer_get_dirty_array();
+	struct b_fsdata *data_ptr;
 
 	// Find the earliest active_trans
 	lock_acquire(sfs->trans_lock);
@@ -75,9 +76,9 @@ int sfs_checkpoint(struct sfs_fs* sfs) {
 	len = array_num(dirty_buffers);
 	for (i = 0; i < len; i++) {
 		buffer_ptr = array_get(dirty_buffers, i);
-		(void) buffer_ptr;
-		// if (buffer_ptr->b_fsdata->oldest_lsn < oldest_lsn)
-		// 	oldest_lsn = buffer_ptr->b_fsdata->oldest_lsn;
+		data_ptr = (struct b_fsdata *)buffer_get_fsdata(buffer_ptr);
+		if (data_ptr->oldest_lsn < oldest_lsn)
+			oldest_lsn = data_ptr->oldest_lsn;
 	}
 	lock_release(buffer_lock);
 

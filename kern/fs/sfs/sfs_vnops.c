@@ -74,6 +74,15 @@
 /* Slot in a directory that ".." is expected to appear in */
 #define DOTDOTSLOT  1
 
+#define TRANS_WRITE 0
+#define TRANS_TRUNCATE 1
+#define TRANS_CREAT 2
+#define TRANS_LINK 3
+#define TRANS_MKDIR 4
+#define TRANS_RMDIR 5
+#define TRANS_REMOVE 6
+#define TRANS_RENAME 7
+
 ////////////////////////////////////////////////////////////
 // Vnode operations.
 
@@ -165,8 +174,10 @@ int
 sfs_write(struct vnode *v, struct uio *uio)
 {
 	struct sfs_vnode *sv = v->vn_data;
+	struct sfs_fs *sfs = v->vn_fs->fs_data;
 	int result;
 
+	sfs_trans_begin(sfs, TRANS_WRITE);
 	KASSERT(uio->uio_rw==UIO_WRITE);
 
 	lock_acquire(sv->sv_lock);
@@ -177,6 +188,7 @@ sfs_write(struct vnode *v, struct uio *uio)
 	unreserve_buffers(SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
 
+	sfs_trans_commit(sfs, TRANS_WRITE);
 	return result;
 }
 
@@ -403,8 +415,10 @@ int
 sfs_truncate(struct vnode *v, off_t len)
 {
 	struct sfs_vnode *sv = v->vn_data;
+	struct sfs_fs *sfs = v->vn_fs->fs_data;
 	int result;
 
+	sfs_trans_begin(sfs, TRANS_TRUNCATE);
 	lock_acquire(sv->sv_lock);
 	reserve_buffers(SFS_BLOCKSIZE);
 
@@ -412,6 +426,7 @@ sfs_truncate(struct vnode *v, off_t len)
 
 	unreserve_buffers(SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
+	sfs_trans_commit(sfs, TRANS_TRUNCATE);
 	return result;
 }
 
@@ -569,7 +584,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	uint32_t ino;
 	int result;
 
-	sfs_trans_begin(sfs);
+	sfs_trans_begin(sfs, TRANS_CREAT);
 	lock_acquire(sv->sv_lock);
 	reserve_buffers(SFS_BLOCKSIZE);
 
@@ -659,7 +674,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	unreserve_buffers(SFS_BLOCKSIZE);
 	lock_release(newguy->sv_lock);
 	lock_release(sv->sv_lock);
-	sfs_trans_commit(sfs);
+	sfs_trans_commit(sfs, TRANS_CREAT);
 	return 0;
 }
 
@@ -686,6 +701,7 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 	struct sfs_dinode *inodeptr;
 	int result;
 
+	sfs_trans_begin(sfs, TRANS_LINK);
 	KASSERT(file->vn_fs == dir->vn_fs);
 
 	/* Hard links to directories aren't allowed. */
@@ -729,6 +745,7 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 	lock_release(f->sv_lock);
 	lock_release(sv->sv_lock);
 	unreserve_buffers(SFS_BLOCKSIZE);
+	sfs_trans_commit(sfs, TRANS_LINK);
 	return 0;
 }
 
@@ -756,6 +773,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	struct sfs_vnode *newguy;
 
 	(void)mode;
+	sfs_trans_begin(sfs, TRANS_MKDIR);
 
 	lock_acquire(sv->sv_lock);
 	reserve_buffers(SFS_BLOCKSIZE);
@@ -842,6 +860,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	unreserve_buffers(SFS_BLOCKSIZE);
 
 	KASSERT(result==0);
+	sfs_trans_commit(sfs, TRANS_MKDIR);
 	return result;
 
 die_uncreate:
@@ -877,6 +896,8 @@ sfs_rmdir(struct vnode *v, const char *name)
 	struct sfs_dinode *victim_inodeptr;
 	int result, result2;
 	int slot;
+
+	sfs_trans_begin(sfs, TRANS_RMDIR);
 
 	/* Cannot remove the . or .. entries from a directory! */
 	if (!strcmp(name, ".") || !strcmp(name, "..")) {
@@ -967,6 +988,8 @@ die_loadsv:
  	unreserve_buffers(SFS_BLOCKSIZE);
  	lock_release(sv->sv_lock);
 
+ 	sfs_trans_commit(sfs, TRANS_RMDIR);
+
 	return result;
 }
 
@@ -989,6 +1012,8 @@ sfs_remove(struct vnode *dir, const char *name)
 	struct sfs_dinode *dir_inodeptr;
 	int slot;
 	int result;
+
+	sfs_trans_begin(sfs, TRANS_REMOVE);
 
 	/* need to check this to avoid deadlock even in error condition */
 	if (!strcmp(name, ".") || !strcmp(name, "..")) {
@@ -1055,6 +1080,7 @@ out_loadsv:
 out_buffers:
 	lock_release(sv->sv_lock);
 	unreserve_buffers(SFS_BLOCKSIZE);
+	sfs_trans_commit(sfs, TRANS_REMOVE);
 	return result;
 }
 
@@ -1149,6 +1175,8 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	int result, result2;
 	struct sfs_direntry sd;
 	int found_dir1;
+
+	sfs_trans_begin(sfs, TRANS_RENAME);
 
 	/* make gcc happy */
 	obj2_inodeptr = NULL;
@@ -1609,6 +1637,8 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	unreserve_buffers(SFS_BLOCKSIZE);
 
 	lock_release(sfs->sfs_renamelock);
+
+	sfs_trans_commit(sfs, TRANS_RENAME);
 
 	return result;
 }

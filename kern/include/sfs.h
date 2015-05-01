@@ -88,7 +88,7 @@ struct sfs_fs {
 // table and assign the pids.
 struct trans {
 	int id;
-	int first_lsn;
+	unsigned first_lsn;
 };
 
 /*
@@ -96,8 +96,8 @@ struct trans {
  */
 int sfs_mount(const char *device);
 
-int sfs_trans_begin(struct sfs_fs* sfs);
-int sfs_trans_commit(struct sfs_fs* sfs);
+int sfs_trans_begin(struct sfs_fs* sfs, int trans_type);
+int sfs_trans_commit(struct sfs_fs* sfs, int trans_type);
 int sfs_checkpoint(struct sfs_fs* sfs);
 
 #endif /* _SFS_H_ */
