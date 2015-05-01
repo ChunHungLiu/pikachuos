@@ -50,6 +50,12 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	size_t reclen;
 	uint32_t odometer;
 
+	if (!sfs_jphys_iswriting(sfs)) {
+		kprintf("Not writing\n");
+		kfree(recptr);
+		return 0;
+	}
+
 	// do checkpoint here.
 	odometer = sfs_jphys_getodometer(sfs->sfs_jphys);
 	if (odometer > 10) {
@@ -57,93 +63,40 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	}
 	// Debugging
 	kprintf("jentry: ");
+	jentry_print(recptr);
 
 	switch (code) {
+		// Special case. There is extra data after the struct
+		case META_UPDATE:
+			reclen = sizeof(struct meta_update_args);
+			reclen += 2 * ((struct meta_update_args *)recptr)->data_len;
+			break;
 		case BLOCK_ALLOC:
 			reclen = sizeof(struct block_alloc_args);
-			kprintf("BLOCK_ALLOC(code=%d, id=%d, disk_addr=%d, ref_addr=%d, offset_addr=%d)",
-				((struct block_alloc_args*)recptr)->code,
-				((struct block_alloc_args*)recptr)->id,
-				((struct block_alloc_args*)recptr)->disk_addr,
-				((struct block_alloc_args*)recptr)->ref_addr,
-				((struct block_alloc_args*)recptr)->offset_addr);
 			break;
 		case INODE_UPDATE_TYPE:
 			reclen = sizeof(struct inode_update_type_args);
-			kprintf("INODE_UPDATE_TYPE(code=%d, id=%d, inode_addr=%d, old_type=%d, new_type=%d)",
-				((struct inode_update_type_args*)recptr)->code,
-				((struct inode_update_type_args*)recptr)->id,
-				((struct inode_update_type_args*)recptr)->inode_addr,
-				((struct inode_update_type_args*)recptr)->old_type,
-				((struct inode_update_type_args*)recptr)->new_type);
 			break;
 		case TRUNCATE:
 			reclen = sizeof(struct truncate_args);
-			kprintf("TRUNCATE(code=%d, id=%d, inode_addr=%d, start_block=%d, end_block=%d)",
-				((struct truncate_args*)recptr)->code,
-				((struct truncate_args*)recptr)->id,
-				((struct truncate_args*)recptr)->inode_addr,
-				((struct truncate_args*)recptr)->start_block,
-				((struct truncate_args*)recptr)->end_block);
 			break;
 		case INODE_LINK:
 			reclen = sizeof(struct inode_link_args);
-			kprintf("INODE_LINK(code=%d, id=%d, disk_addr=%d, old_linkcount=%d, new_linkcount=%d)",
-				((struct inode_link_args*)recptr)->code,
-				((struct inode_link_args*)recptr)->id,
-				((struct inode_link_args*)recptr)->disk_addr,
-				((struct inode_link_args*)recptr)->old_linkcount,
-				((struct inode_link_args*)recptr)->new_linkcount);
 			break;
 		case TRANS_COMMIT:
 			reclen = sizeof(struct trans_commit_args);
-			kprintf("TRANS_COMMIT(code=%d, id=%d, trans_type=%d)",
-				((struct trans_commit_args*)recptr)->code,
-				((struct trans_commit_args*)recptr)->id,
-				((struct trans_commit_args*)recptr)->trans_type);
-			break;
-		case META_UPDATE:
-			reclen = sizeof(struct meta_update_args);
-			kprintf("META_UPDATE(code=%d, id=%d, disk_addr=%d, offset_addr=%d, data_len=%d, old_data=%p, new_data=%p)",
-				((struct meta_update_args*)recptr)->code,
-				((struct meta_update_args*)recptr)->id,
-				((struct meta_update_args*)recptr)->disk_addr,
-				((struct meta_update_args*)recptr)->offset_addr,
-				((struct meta_update_args*)recptr)->data_len,
-				((struct meta_update_args*)recptr)->old_data,
-				((struct meta_update_args*)recptr)->new_data);
 			break;
 		case BLOCK_DEALLOC:
 			reclen = sizeof(struct block_dealloc_args);
-			kprintf("BLOCK_DEALLOC(code=%d, id=%d, disk_addr=%d)",
-				((struct block_dealloc_args*)recptr)->code,
-				((struct block_dealloc_args*)recptr)->id,
-				((struct block_dealloc_args*)recptr)->disk_addr);
 			break;
 		case TRANS_BEGIN:
 			reclen = sizeof(struct trans_begin_args);
-			kprintf("TRANS_BEGIN(code=%d, id=%d, trans_type=%d)",
-				((struct trans_begin_args*)recptr)->code,
-				((struct trans_begin_args*)recptr)->id,
-				((struct trans_begin_args*)recptr)->trans_type);
 			break;
 		case BLOCK_WRITE:
 			reclen = sizeof(struct block_write_args);
-			kprintf("BLOCK_WRITE(code=%d, id=%d, written_addr=%d, new_checksum=%d, new_alloc=%d)",
-				((struct block_write_args*)recptr)->code,
-				((struct block_write_args*)recptr)->id,
-				((struct block_write_args*)recptr)->written_addr,
-				((struct block_write_args*)recptr)->new_checksum,
-				((struct block_write_args*)recptr)->new_alloc);
 			break;
 		case RESIZE:
 			reclen = sizeof(struct resize_args);
-			kprintf("RESIZE(code=%d, id=%d, inode_addr=%d, old_size=%d, new_size=%d)",
-				((struct resize_args*)recptr)->code,
-				((struct resize_args*)recptr)->id,
-				((struct resize_args*)recptr)->inode_addr,
-				((struct resize_args*)recptr)->old_size,
-				((struct resize_args*)recptr)->new_size);
 			break;
 	}
 
@@ -155,6 +108,151 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 }
 
 #define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
+
+void jentry_print(void* recptr) {
+	int code = *((int*)recptr);
+	unsigned i;
+
+	switch (code) {
+		case META_UPDATE:
+		{
+			struct meta_update_args* jentry = (struct meta_update_args*)recptr;
+			kprintf("META_UPDATE(code=%d, id=%d, disk_addr=%d, offset_addr=%d, data_len=%d, old_data=\"",
+				jentry->code,
+				jentry->id,
+				jentry->disk_addr,
+				jentry->offset_addr,
+				jentry->data_len);
+
+			// The data for the entry starts at the end of the struct, so
+			//  get the address of the struct and add the struct's size
+			//  to get to the end
+			unsigned char* old_data = (unsigned char*)jentry + sizeof(*jentry);
+			unsigned char* new_data = old_data + jentry->data_len;
+
+			// print out the old data as hex
+			for (i = 0; i < jentry->data_len; i++) {
+				if (i)
+					kprintf(" ");
+				kprintf("%02x", old_data[i]);
+			}
+
+			kprintf("\", new_data=\"");
+
+			// print out the new data as hex
+			for (i = 0; i < jentry->data_len; i++) {
+				if (i)
+					kprintf(" ");
+				kprintf("%02x", new_data[i]);
+			}
+
+			kprintf("\")"); 
+		}
+		break;
+		case BLOCK_ALLOC:
+			kprintf("BLOCK_ALLOC(code=%d, id=%d, disk_addr=%d, ref_addr=%d, offset_addr=%d)",
+				((struct block_alloc_args*)recptr)->code,
+				((struct block_alloc_args*)recptr)->id,
+				((struct block_alloc_args*)recptr)->disk_addr,
+				((struct block_alloc_args*)recptr)->ref_addr,
+				((struct block_alloc_args*)recptr)->offset_addr);
+			break;
+		case INODE_UPDATE_TYPE:
+			kprintf("INODE_UPDATE_TYPE(code=%d, id=%d, inode_addr=%d, old_type=%d, new_type=%d)",
+				((struct inode_update_type_args*)recptr)->code,
+				((struct inode_update_type_args*)recptr)->id,
+				((struct inode_update_type_args*)recptr)->inode_addr,
+				((struct inode_update_type_args*)recptr)->old_type,
+				((struct inode_update_type_args*)recptr)->new_type);
+			break;
+		case TRUNCATE:
+			kprintf("TRUNCATE(code=%d, id=%d, inode_addr=%d, start_block=%d, end_block=%d)",
+				((struct truncate_args*)recptr)->code,
+				((struct truncate_args*)recptr)->id,
+				((struct truncate_args*)recptr)->inode_addr,
+				((struct truncate_args*)recptr)->start_block,
+				((struct truncate_args*)recptr)->end_block);
+			break;
+		case INODE_LINK:
+			kprintf("INODE_LINK(code=%d, id=%d, disk_addr=%d, old_linkcount=%d, new_linkcount=%d)",
+				((struct inode_link_args*)recptr)->code,
+				((struct inode_link_args*)recptr)->id,
+				((struct inode_link_args*)recptr)->disk_addr,
+				((struct inode_link_args*)recptr)->old_linkcount,
+				((struct inode_link_args*)recptr)->new_linkcount);
+			break;
+		case TRANS_COMMIT:
+			kprintf("TRANS_COMMIT(code=%d, id=%d, trans_type=%d)",
+				((struct trans_commit_args*)recptr)->code,
+				((struct trans_commit_args*)recptr)->id,
+				((struct trans_commit_args*)recptr)->trans_type);
+			break;
+		case BLOCK_DEALLOC:
+			kprintf("BLOCK_DEALLOC(code=%d, id=%d, disk_addr=%d)",
+				((struct block_dealloc_args*)recptr)->code,
+				((struct block_dealloc_args*)recptr)->id,
+				((struct block_dealloc_args*)recptr)->disk_addr);
+			break;
+		case TRANS_BEGIN:
+			kprintf("TRANS_BEGIN(code=%d, id=%d, trans_type=%d)",
+				((struct trans_begin_args*)recptr)->code,
+				((struct trans_begin_args*)recptr)->id,
+				((struct trans_begin_args*)recptr)->trans_type);
+			break;
+		case BLOCK_WRITE:
+			kprintf("BLOCK_WRITE(code=%d, id=%d, written_addr=%d, new_checksum=%d, new_alloc=%d)",
+				((struct block_write_args*)recptr)->code,
+				((struct block_write_args*)recptr)->id,
+				((struct block_write_args*)recptr)->written_addr,
+				((struct block_write_args*)recptr)->new_checksum,
+				((struct block_write_args*)recptr)->new_alloc);
+			break;
+		case RESIZE:
+			kprintf("RESIZE(code=%d, id=%d, inode_addr=%d, old_size=%d, new_size=%d)",
+				((struct resize_args*)recptr)->code,
+				((struct resize_args*)recptr)->id,
+				((struct resize_args*)recptr)->inode_addr,
+				((struct resize_args*)recptr)->old_size,
+				((struct resize_args*)recptr)->new_size);
+			break;
+	}
+}
+
+// Special case, since we need to memcpy old and new data
+void *jentry_meta_update(daddr_t disk_addr, size_t offset_addr, size_t data_len, void * old_data, void * new_data)
+{
+	struct meta_update_args *record;
+
+	record = kmalloc(sizeof(struct meta_update_args) + 2 * data_len);
+
+	// The data for the entry starts at the end of the struct, so
+	//  get the address of the struct and add the struct's size
+	//  to get to the end
+	unsigned char* record_old_data = (unsigned char*)record + sizeof(*record);
+	unsigned char* record_new_data = record_old_data + data_len;
+
+	record->code = META_UPDATE;
+	record->id = curproc->pid;
+	record->disk_addr = disk_addr;
+	record->offset_addr = offset_addr;
+	record->data_len = data_len;
+
+	// Either zero or copy in old data
+	if (old_data == NULL) {
+		bzero(record_old_data, data_len);
+	} else {
+		memcpy(record_old_data, old_data, data_len);
+	}
+
+	// Either zero or copy in new data
+	if (new_data == NULL) {
+		bzero(record_new_data, data_len);
+	} else {
+		memcpy(record_new_data, new_data, data_len);
+	}
+
+	return (void *)record;
+}
 
 void *jentry_block_alloc(daddr_t disk_addr, daddr_t ref_addr, size_t offset_addr)
 {
@@ -220,22 +318,6 @@ void *jentry_trans_commit(int trans_type)
 	record->code = TRANS_COMMIT;
 	record->id = curproc->pid;
 	record->trans_type = trans_type;
-
-	return (void *)record;
-}
-
-void *jentry_meta_update(daddr_t disk_addr, size_t offset_addr, size_t data_len, void * old_data, void * new_data)
-{
-	struct meta_update_args *record;
-
-	record = kmalloc(sizeof(struct meta_update_args));
-	record->code = META_UPDATE;
-	record->id = curproc->pid;
-	record->disk_addr = disk_addr;
-	record->offset_addr = offset_addr;
-	record->data_len = data_len;
-	record->old_data = old_data;
-	record->new_data = new_data;
 
 	return (void *)record;
 }

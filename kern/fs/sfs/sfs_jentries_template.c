@@ -48,6 +48,12 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	size_t reclen;
 	uint32_t odometer;
 
+	if (!sfs_jphys_iswriting(sfs)) {
+		kprintf("Not writing\n");
+		kfree(recptr);
+		return 0;
+	}
+
 	// do checkpoint here.
 	odometer = sfs_jphys_getodometer(sfs->sfs_jphys);
 	if (odometer > 10) {
@@ -55,8 +61,14 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	}
 	// Debugging
 	kprintf("jentry: ");
+	jentry_print(recptr);
 
 	switch (code) {
+		// Special case. There is extra data after the struct
+		case META_UPDATE:
+			reclen = sizeof(struct meta_update_args);
+			reclen += 2 * ((struct meta_update_args *)recptr)->data_len;
+			break;
 /* Autogenerate: cases */
 	}
 
@@ -68,5 +80,85 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 }
 
 #define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
+
+void jentry_print(void* recptr) {
+	int code = *((int*)recptr);
+	unsigned i;
+
+	switch (code) {
+		case META_UPDATE:
+		{
+			struct meta_update_args* jentry = (struct meta_update_args*)recptr;
+			kprintf("META_UPDATE(code=%d, id=%d, disk_addr=%d, offset_addr=%d, data_len=%d, old_data=\"",
+				jentry->code,
+				jentry->id,
+				jentry->disk_addr,
+				jentry->offset_addr,
+				jentry->data_len);
+
+			// The data for the entry starts at the end of the struct, so
+			//  get the address of the struct and add the struct's size
+			//  to get to the end
+			unsigned char* old_data = (unsigned char*)jentry + sizeof(*jentry);
+			unsigned char* new_data = old_data + jentry->data_len;
+
+			// print out the old data as hex
+			for (i = 0; i < jentry->data_len; i++) {
+				if (i)
+					kprintf(" ");
+				kprintf("%02x", old_data[i]);
+			}
+
+			kprintf("\", new_data=\"");
+
+			// print out the new data as hex
+			for (i = 0; i < jentry->data_len; i++) {
+				if (i)
+					kprintf(" ");
+				kprintf("%02x", new_data[i]);
+			}
+
+			kprintf("\")"); 
+		}
+		break;
+/* Autogenerate: print */
+	}
+}
+
+// Special case, since we need to memcpy old and new data
+void *jentry_meta_update(daddr_t disk_addr, size_t offset_addr, size_t data_len, void * old_data, void * new_data)
+{
+	struct meta_update_args *record;
+
+	record = kmalloc(sizeof(struct meta_update_args) + 2 * data_len);
+
+	// The data for the entry starts at the end of the struct, so
+	//  get the address of the struct and add the struct's size
+	//  to get to the end
+	unsigned char* record_old_data = (unsigned char*)record + sizeof(*record);
+	unsigned char* record_new_data = record_old_data + data_len;
+
+	record->code = META_UPDATE;
+	record->id = curproc->pid;
+	record->disk_addr = disk_addr;
+	record->offset_addr = offset_addr;
+	record->data_len = data_len;
+
+	// Either zero or copy in old data
+	if (old_data == NULL) {
+		bzero(record_old_data, data_len);
+	} else {
+		memcpy(record_old_data, old_data, data_len);
+	}
+
+	// Either zero or copy in new data
+	if (new_data == NULL) {
+		bzero(record_new_data, data_len);
+	} else {
+		memcpy(record_new_data, new_data, data_len);
+	}
+
+	return (void *)record;
+}
 
 /* Autogenerate: functions */
