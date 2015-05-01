@@ -193,5 +193,7 @@ void buffer_printstats(void);
  */
 void buffer_bootstrap(void);
 
+struct array *buffer_get_dirty_array(void);
+struct lock *buffer_get_lock(void);
 
 #endif /* _BUF_H_ */

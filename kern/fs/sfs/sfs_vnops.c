@@ -569,6 +569,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	uint32_t ino;
 	int result;
 
+	sfs_trans_begin(sfs);
 	lock_acquire(sv->sv_lock);
 	reserve_buffers(SFS_BLOCKSIZE);
 
@@ -658,6 +659,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	unreserve_buffers(SFS_BLOCKSIZE);
 	lock_release(newguy->sv_lock);
 	lock_release(sv->sv_lock);
+	sfs_trans_commit(sfs);
 	return 0;
 }
 

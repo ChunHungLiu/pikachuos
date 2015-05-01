@@ -28,7 +28,13 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 
 	unsigned code = *(int *)recptr;
 	size_t reclen;
+	uint32_t odometer;
 
+	// do checkpoint here.
+	odometer = sfs_jphys_getodometer(sfs->sfs_jphys);
+	if (odometer > 10) {
+		sfs_checkpoint(sfs);
+	}
 	// Debugging
 	kprintf("jentry: ");
 

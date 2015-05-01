@@ -98,5 +98,6 @@ int sfs_mount(const char *device);
 
 int sfs_trans_begin(struct sfs_fs* sfs);
 int sfs_trans_commit(struct sfs_fs* sfs);
+int sfs_checkpoint(struct sfs_fs* sfs);
 
 #endif /* _SFS_H_ */

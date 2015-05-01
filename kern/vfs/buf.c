@@ -2037,3 +2037,11 @@ buffer_bootstrap(void)
 		panic("Starting syncer failed\n");
 	}
 }
+
+struct array *buffer_get_dirty_array() {
+	return (struct array *)&dirty_buffers;
+}
+
+struct lock *buffer_get_lock() {
+	return buffer_lock;
+}
