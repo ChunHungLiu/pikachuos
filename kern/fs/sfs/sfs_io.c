@@ -444,6 +444,10 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio)
 	if (uio->uio_resid != origresid &&
 	    uio->uio_rw == UIO_WRITE &&
 	    uio->uio_offset > (off_t)inodeptr->sfi_size) {
+		sfs_jphys_write_wrapper(sv->sv_absvn.vn_fs->fs_data, NULL,
+			jentry_resize(	sv->sv_ino,	// disk_addr
+							inodeptr->sfi_size,	// old_size
+							uio->uio_offset));	// new_size
 		inodeptr->sfi_size = uio->uio_offset;
 		sfs_dinode_mark_dirty(sv);
 	}
@@ -484,8 +488,6 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 	char *ioptr;
 	bool doalloc;
 	int result;
-
-	kprintf("%d\n", len);
 
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 
@@ -552,6 +554,10 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 		/* Update the vnode size if needed */
 		endpos = actualpos + len;
 		if (endpos > (off_t)dino->sfi_size) {
+			sfs_jphys_write_wrapper(sfs, NULL,
+				jentry_resize(	sv->sv_ino,	// disk_addr
+								dino->sfi_size,	// old_size
+								endpos));	// new_size
 			dino->sfi_size = endpos;
 			sfs_dinode_mark_dirty(sv);
 		}

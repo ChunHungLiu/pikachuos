@@ -157,7 +157,7 @@ void sfs_jphys_stopwriting(struct sfs_fs *sfs);
 
 sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 		struct sfs_jphys_writecontext *ctx,	void *rec);
-sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, 
+sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, const char* func,
 		struct sfs_fs *sfs,	struct sfs_jphys_writecontext *ctx, void *rec);
 void *jentry_block_alloc(daddr_t disk_addr, 
 	daddr_t ref_addr, size_t offset_addr);
@@ -170,8 +170,9 @@ void *jentry_trans_commit(int trans_type, int id);
 void *jentry_trans_begin(int trans_type, int id);
 void *jentry_inode_update_type(daddr_t inode_addr, int old_type, int new_type);
 void *jentry_block_write(daddr_t written_addr, uint32_t new_checksum);
+void *jentry_resize(daddr_t inode_addr, size_t old_size, size_t new_size);
 uint32_t checksum(struct buf *input);
 
-#define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, args)
+#define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
 
 #endif /* _SFSPRIVATE_H_ */

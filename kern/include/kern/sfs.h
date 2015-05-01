@@ -78,6 +78,7 @@
 #define INODE_UPDATE_TYPE 9
 #define TRANS_BEGIN 10
 #define TRANS_COMMIT 11
+#define RESIZE 12
 
 /*
  * On-disk superblock
@@ -111,6 +112,15 @@ struct sfs_dinode {
 struct sfs_direntry {
 	uint32_t sfd_ino;			/* Inode number */
 	char sfd_name[SFS_NAMELEN];		/* Filename */
+};
+
+/*
+ * Buffer metadata
+ */
+struct fs_data {
+	struct sfs_fs *sfs;
+	daddr_t diskblock;
+	uint64_t oldest_lsn;
 };
 
 /*
@@ -201,6 +211,13 @@ struct truncate_args {
 	daddr_t inode_addr;
 	daddr_t start_block;
 	daddr_t end_block;
+};
+
+struct resize_args {
+	unsigned code;
+	daddr_t inode_addr;
+	size_t old_size;
+	size_t new_size;
 };
 
 struct block_write_args {

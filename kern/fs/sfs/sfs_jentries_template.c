@@ -15,11 +15,11 @@ uint32_t checksum(struct buf *input) {
 
 #undef sfs_jphys_write_wrapper
 
-sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line,
+sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, const char* func,
 		struct sfs_fs *sfs, struct sfs_jphys_writecontext *ctx, void *rec) {
 
 	sfs_lsn_t ret = sfs_jphys_write_wrapper(sfs, ctx, rec);
-	kprintf(" %s:%d\n", file, line);
+	kprintf(" %s:%d:%s\n", file, line, func);
 	return ret;
 }
 
@@ -49,6 +49,6 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	return lsn;
 }
 
-#define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, args)
+#define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
 
 /* Autogenerate: functions */

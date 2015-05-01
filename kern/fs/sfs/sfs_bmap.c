@@ -318,6 +318,7 @@ sfs_blockobj_set(struct sfs_blockobj *bo, uint32_t offset, uint32_t newval)
 	if (bo->bo_isinode) {
 		struct sfs_dinode *dino;
 		unsigned indirlevel, indirnum;
+		uint32_t oldval;
 
 		KASSERT(offset == 0);
 
@@ -328,25 +329,41 @@ sfs_blockobj_set(struct sfs_blockobj *bo, uint32_t offset, uint32_t newval)
 		switch (indirlevel) {
 		    case 0:
 			KASSERT(indirnum < SFS_NDIRECT);
+			oldval = dino->sfi_direct[indirnum];
 			dino->sfi_direct[indirnum] = newval;
+			offset = (int*)dino - (int*)&dino->sfi_direct[indirnum];	// Hacky stuff 'cause I don't want to make journal entries for all this
 			break;
 		    case 1:
 			KASSERT(indirnum == 0);
+			oldval = dino->sfi_indirect;
 			dino->sfi_indirect = newval;
+			offset = (int*)dino - (int*)&dino->sfi_indirect;	// Hacky stuff 'cause I don't want to make journal entries for all this
 			break;
 		    case 2:
 			KASSERT(indirnum == 0);
+			oldval = dino->sfi_dindirect;
 			dino->sfi_dindirect = newval;
+			offset = (int*)dino - (int*)&dino->sfi_dindirect;	// Hacky stuff 'cause I don't want to make journal entries for all this
 			break;
 		    case 3:
 			KASSERT(indirnum == 0);
+			oldval = dino->sfi_tindirect;
 			dino->sfi_tindirect = newval;
+			offset = (int*)dino - (int*)&dino->sfi_tindirect;	// Hacky stuff 'cause I don't want to make journal entries for all this
 			break;
 		    default:
 			panic("sfs_blockobj_get: invalid indirection %u\n",
 			      indirlevel);
 		}
-		sfs_dinode_mark_dirty(bo->bo_inode.i_sv);
+
+		sfs_jphys_write_wrapper(bo->bo_inode.i_sv->sv_absvn.vn_fs->fs_data, NULL,
+			jentry_meta_update( bo->bo_inode.i_sv->sv_ino,	// disk_addr
+								offset,	// offset_adder
+								sizeof(newval),	// data_len
+								&oldval,	// old_data
+								&newval));	// new_data
+
+		sfs_dinode_mark_dirty(bo->bo_inode.i_sv);	// Journalled
 	}
 	else {
 		uint32_t *idptr;
@@ -356,13 +373,13 @@ sfs_blockobj_set(struct sfs_blockobj *bo, uint32_t offset, uint32_t newval)
 
 		struct buf *id_buf = bo->bo_idblock.id_buf;
 		idptr = buffer_map(id_buf);
-		// A4 TODO: Does this need to be tracked?
-		//sfs_jphys_write_wrapper(id_buf->b_fs, NULL,
-		//	jentry_meta_update(id_buf->b_physblock,
-		//					   offset,
-		//					   sizeof(uint32_t),
-		//					   &idptr[offset],
-		//					   &newval));
+		struct fs_data *buf_metadata = (struct fs_data*)buffer_get_fsdata(id_buf);
+		sfs_jphys_write_wrapper(buf_metadata->sfs, NULL,
+			jentry_meta_update(buf_metadata->diskblock,
+							   offset,
+							   sizeof(uint32_t),
+							   &idptr[offset],
+							   &newval));
 		idptr[offset] = newval;
 		buffer_mark_dirty(bo->bo_idblock.id_buf);	// Journalled
 	}
@@ -873,7 +890,7 @@ sfs_discard_subtree(struct sfs_vnode *sv, uint32_t *rootptr, unsigned indir,
 				sfs_bfree_prelocked(sfs, layers[1].block);
 				if (indir == 1) {
 					*rootptr = 0;
-					sfs_dinode_mark_dirty(sv);
+					sfs_dinode_mark_dirty(sv);	// Needs to be journalled
 				}
 				if (indir != 1) {
 					// We can assume that everything past this in the indirection block is about to be 0ed
@@ -934,7 +951,7 @@ sfs_discard_subtree(struct sfs_vnode *sv, uint32_t *rootptr, unsigned indir,
 			sfs_bfree_prelocked(sfs, layers[2].block);
 			if (indir == 2) {
 				*rootptr = 0;
-				sfs_dinode_mark_dirty(sv);
+				sfs_dinode_mark_dirty(sv);	// Needs to be journalled
 			}
 			if (indir == 3) {
 				// Again, we assume that everything past this is about to be 0ed
@@ -983,7 +1000,7 @@ sfs_discard_subtree(struct sfs_vnode *sv, uint32_t *rootptr, unsigned indir,
 		 */
 		sfs_bfree_prelocked(sfs, layers[3].block);
 		*rootptr = 0;
-		sfs_dinode_mark_dirty(sv);
+		sfs_dinode_mark_dirty(sv);	// Needs to be journalled
 		buffer_release_and_invalidate(layers[3].buf);
 	}
 	else if (layers[3].modified) {
@@ -1017,8 +1034,6 @@ sfs_discard(struct sfs_vnode *sv,
 	uint32_t lo, hi, substart, subend;
 	int result;
 
-	sfs_jphys_write_wrapper(sfs, NULL, jentry_truncate(sv->sv_ino, startfileblock, endfileblock));
-
 	inodeptr = sfs_dinode_map(sv);
 
 	/*
@@ -1029,8 +1044,14 @@ sfs_discard(struct sfs_vnode *sv,
 		block = inodeptr->sfi_direct[i];
 		if (i >= startfileblock && i < endfileblock && block != 0) {
 			sfs_bfree_prelocked(sfs, block);
+			sfs_jphys_write_wrapper(sfs, NULL,
+				jentry_meta_update( sv->sv_ino,	// disk_addr
+									(int*)inodeptr - (int*)&inodeptr->sfi_direct[i],	// offset
+									sizeof(int),	// data_len
+									&inodeptr->sfi_direct[i],	// old_data
+									NULL));	// new_data -- all 0ss
 			inodeptr->sfi_direct[i] = 0;
-			sfs_dinode_mark_dirty(sv);
+			sfs_dinode_mark_dirty(sv);	// Journalled
 		}
 	}
 
@@ -1103,6 +1124,8 @@ sfs_itrunc(struct sfs_vnode *sv, off_t newlen)
 	/* Lock the freemap for the whole truncate */
 	sfs_lock_freemap(sfs);
 
+	sfs_jphys_write_wrapper(sfs, NULL, jentry_truncate(sv->sv_ino, newblocklen, oldblocklen));
+
 	if (newblocklen < oldblocklen) {
 		result = sfs_discard(sv, newblocklen, oldblocklen);
 		if (result) {
@@ -1116,7 +1139,7 @@ sfs_itrunc(struct sfs_vnode *sv, off_t newlen)
 	inodeptr->sfi_size = newlen;
 
 	/* Mark the inode dirty */
-	sfs_dinode_mark_dirty(sv);
+	sfs_dinode_mark_dirty(sv);	// Journalled
 
 	/* release the freemap */
 	sfs_unlock_freemap(sfs);
