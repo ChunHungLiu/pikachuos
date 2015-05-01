@@ -846,7 +846,7 @@ sfs_discard_subtree(struct sfs_vnode *sv, uint32_t *rootptr, unsigned indir,
 				layers[layer].data[layers[layer].pos] = 0;
 				layers[layer].modified = true;
 
-				sfs_bfree(sfs, layers[layer - 1].block);
+				sfs_bfree_prelocked(sfs, layers[layer - 1].block);
 			}
 			/* end for level 1 */
 
@@ -856,7 +856,7 @@ sfs_discard_subtree(struct sfs_vnode *sv, uint32_t *rootptr, unsigned indir,
 				 * block is empty now;
 				 * free it
 				 */
-				sfs_bfree(sfs, layers[1].block);
+				sfs_bfree_prelocked(sfs, layers[1].block);
 				if (indir == 1) {
 					*rootptr = 0;
 					sfs_dinode_mark_dirty(sv);
@@ -909,7 +909,7 @@ sfs_discard_subtree(struct sfs_vnode *sv, uint32_t *rootptr, unsigned indir,
 			 * The whole double indirect
 			 * block is empty now; free it
 			 */
-			sfs_bfree(sfs, layers[2].block);
+			sfs_bfree_prelocked(sfs, layers[2].block);
 			if (indir == 2) {
 				*rootptr = 0;
 				sfs_dinode_mark_dirty(sv);
@@ -951,7 +951,7 @@ sfs_discard_subtree(struct sfs_vnode *sv, uint32_t *rootptr, unsigned indir,
 		 * The whole triple indirect block is
 		 * empty now; free it
 		 */
-		sfs_bfree(sfs, layers[3].block);
+		sfs_bfree_prelocked(sfs, layers[3].block);
 		*rootptr = 0;
 		sfs_dinode_mark_dirty(sv);
 		buffer_release_and_invalidate(layers[3].buf);
@@ -996,7 +996,7 @@ sfs_discard(struct sfs_vnode *sv,
 	for (i=0; i<SFS_NDIRECT; i++) {
 		block = inodeptr->sfi_direct[i];
 		if (i >= startfileblock && i < endfileblock && block != 0) {
-			sfs_bfree(sfs, block);
+			sfs_bfree_prelocked(sfs, block);
 			inodeptr->sfi_direct[i] = 0;
 			sfs_dinode_mark_dirty(sv);
 		}
@@ -1051,6 +1051,7 @@ sfs_discard(struct sfs_vnode *sv,
 int
 sfs_itrunc(struct sfs_vnode *sv, off_t newlen)
 {
+	struct sfs_fs *sfs = sv->sv_absvn.vn_fs->fs_data;
 	struct sfs_dinode *inodeptr;
 	uint32_t oldblocklen, newblocklen;
 	int result;
@@ -1067,9 +1068,13 @@ sfs_itrunc(struct sfs_vnode *sv, off_t newlen)
 	oldblocklen = DIVROUNDUP(inodeptr->sfi_size, SFS_BLOCKSIZE);
 	newblocklen = DIVROUNDUP(newlen, SFS_BLOCKSIZE);
 
+	/* Lock the freemap for the whole truncate */
+	sfs_lock_freemap(sfs);
+
 	if (newblocklen < oldblocklen) {
 		result = sfs_discard(sv, newblocklen, oldblocklen);
 		if (result) {
+			sfs_unlock_freemap(sfs);
 			sfs_dinode_unload(sv);
 			return result;
 		}
@@ -1080,6 +1085,9 @@ sfs_itrunc(struct sfs_vnode *sv, off_t newlen)
 
 	/* Mark the inode dirty */
 	sfs_dinode_mark_dirty(sv);
+
+	/* release the freemap */
+	sfs_unlock_freemap(sfs);
 
 	/* release the inode buffer */
 	sfs_dinode_unload(sv);

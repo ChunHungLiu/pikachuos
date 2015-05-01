@@ -1685,7 +1685,6 @@ randop(unsigned testcode, unsigned *exists, unsigned numfiles,
 		assert(dofileops);
 		assert(files != NULL);
 
-#if 0 /* XXX currently no ftruncate() in OS/161 */
 		filenum = random() % numfiles;
 		if (exists[filenum] == IS_FILE) {
 			if (files[filenum] == NULL) {
@@ -1694,7 +1693,6 @@ randop(unsigned testcode, unsigned *exists, unsigned numfiles,
 			randtruncate(files[filenum]);
 			return true;
 		}
-#endif
 		break;
 	    case 7:
 		/* write to something */

@@ -384,6 +384,60 @@ dump_client_record(uint32_t myblock, unsigned myoffset, uint64_t mylsn,
 	}
 }
 
+/*
+ * Find the physical location of an LSN.
+ */
+static
+void
+findlsn(const uint64_t *firstlsns, uint32_t jstart, uint32_t jblocks,
+	uint64_t targetlsn,
+	uint32_t *block_ret, unsigned *offset_ret)
+{
+	uint32_t block, nextblock;
+	uint8_t buf[SFS_BLOCKSIZE];
+	unsigned offset;
+	struct sfs_jphys_header jh;
+	uint64_t ci;
+	uint64_t lsn;
+	unsigned len;
+
+	for (block = 0; block < jblocks; block++) {
+		nextblock = (block + 1) % jblocks;
+
+		if (targetlsn < firstlsns[block]) {
+			continue;
+		}
+		if (firstlsns[block] > firstlsns[nextblock] ||
+		    firstlsns[nextblock] == 0 ||
+		    targetlsn < firstlsns[nextblock]) {
+			goto found;
+		}
+	}
+	errx(1, "Cannot find block for tail LSN %llu",
+	     (unsigned long long)targetlsn);
+
+ found:
+
+	diskread(buf, jstart + block);
+	offset = 0;
+	while (offset + sizeof(jh) <= SFS_BLOCKSIZE) {
+		memcpy(&jh, buf + offset, sizeof(jh));
+		ci = SWAP64(jh.jh_coninfo);
+		assert(ci != 0);
+		lsn = SFS_CONINFO_LSN(ci);
+		len = SFS_CONINFO_LEN(ci);
+
+		if (lsn == targetlsn) {
+			*block_ret = block;
+			*offset_ret = offset;
+			return;
+		}
+		offset += len;
+	}
+	errx(1, "Cannot find offset for tail LSN %llu in block %u",
+	     (unsigned long long)targetlsn, block);
+}
+
 static
 void
 dumpjournal(void)
@@ -398,12 +452,14 @@ dumpjournal(void)
 	uint8_t buf[SFS_BLOCKSIZE];
 
 	uint64_t bh_checkpoint_taillsn, eoj_checkpoint_taillsn;
-	uint32_t bh_checkpoint_block, eoj_checkpoint_block;
-	unsigned bh_checkpoint_offset, eoj_checkpoint_offset;
+	//uint32_t bh_checkpoint_block, eoj_checkpoint_block;
+	//unsigned bh_checkpoint_offset, eoj_checkpoint_offset;
 
 	uint64_t veryfirstlsn, prevlsn, headlsn, smallestlsn, taillsn;
 	uint32_t headblock, smallestlsn_block, tailblock;
 	unsigned tailoffset;
+
+	uint64_t *firstlsns;
 
 	uint64_t mylsn, lsn;
 	uint32_t myblock, block;
@@ -425,8 +481,8 @@ dumpjournal(void)
 	 */
 
 	bh_checkpoint_taillsn = eoj_checkpoint_taillsn = 0;
-	bh_checkpoint_block = eoj_checkpoint_block = 0;
-	bh_checkpoint_offset = eoj_checkpoint_offset = 0;
+	//bh_checkpoint_block = eoj_checkpoint_block = 0;
+	//bh_checkpoint_offset = eoj_checkpoint_offset = 0;
 
 	veryfirstlsn = 0;
 	prevlsn = 0;
@@ -436,6 +492,7 @@ dumpjournal(void)
 	smallestlsn_block = 0;
 	tailblock = 0;
 	tailoffset = 0;
+	firstlsns = malloc(jblocks * sizeof(firstlsns[0]));
 
 	for (block=0; block<jblocks; block++) {
 		diskread(buf, jstart + block);
@@ -450,6 +507,7 @@ dumpjournal(void)
 					     "zero header\n", block, offset);
 				}
 				/* block hasn't been used yet */
+				firstlsns[block] = 0;
 				if (headlsn == 0) {
 					headlsn = prevlsn + 1;
 					headblock = block;
@@ -458,6 +516,10 @@ dumpjournal(void)
 			}
 			lsn = SFS_CONINFO_LSN(ci);
 			len = SFS_CONINFO_LEN(ci);
+
+			if (offset == 0) {
+				firstlsns[block] = lsn;
+			}
 
 			if (len == 0) {
 				errx(1, "At %u[%u] in journal: "
@@ -514,13 +576,13 @@ dumpjournal(void)
 				jt.jt_taillsn = SWAP64(jt.jt_taillsn);
 				if (headlsn == 0) {
 					bh_checkpoint_taillsn = jt.jt_taillsn;
-					bh_checkpoint_block = block;
-					bh_checkpoint_offset = offset;
+					//bh_checkpoint_block = block;
+					//bh_checkpoint_offset = offset;
 				}
 				else {
 					eoj_checkpoint_taillsn = jt.jt_taillsn;
-					eoj_checkpoint_block = block;
-					eoj_checkpoint_offset = offset;
+					//eoj_checkpoint_block = block;
+					//eoj_checkpoint_offset = offset;
 				}
 			}
 
@@ -537,13 +599,13 @@ dumpjournal(void)
 	 */
 	if (bh_checkpoint_taillsn != 0) {
 		taillsn = bh_checkpoint_taillsn;
-		tailblock = bh_checkpoint_block;
-		tailoffset = bh_checkpoint_offset;
+		findlsn(firstlsns, jstart, jblocks, taillsn,
+			&tailblock, &tailoffset);
 	}
 	else if (eoj_checkpoint_taillsn != 0) {
 		taillsn = eoj_checkpoint_taillsn;
-		tailblock = eoj_checkpoint_block;
-		tailoffset = eoj_checkpoint_offset;
+		findlsn(firstlsns, jstart, jblocks, taillsn,
+			&tailblock, &tailoffset);
 	}
 	else if (smallestlsn != 0) {
 		taillsn = smallestlsn;
@@ -555,6 +617,9 @@ dumpjournal(void)
 		tailblock = 0;
 		tailoffset = 0;
 	}
+
+	free(firstlsns);
+	firstlsns = NULL;
 
 	printf("    head: lsn %llu, at %u[0]\n",
 	       (unsigned long long)headlsn, headblock);
