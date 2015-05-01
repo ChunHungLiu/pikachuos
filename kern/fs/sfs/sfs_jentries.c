@@ -67,6 +67,13 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 				((struct inode_link_args*)recptr)->old_linkcount,
 				((struct inode_link_args*)recptr)->new_linkcount);
 			break;
+		case TRANS_COMMIT:
+			reclen = sizeof(struct trans_commit_args);
+			kprintf("TRANS_COMMIT(code=%d, trans_type=%d, id=%d)",
+				((struct trans_commit_args*)recptr)->code,
+				((struct trans_commit_args*)recptr)->trans_type,
+				((struct trans_commit_args*)recptr)->id);
+			break;
 		case META_UPDATE:
 			reclen = sizeof(struct meta_update_args);
 			kprintf("META_UPDATE(code=%d, disk_addr=%d, offset_addr=%d, data_len=%d, old_data=%p, new_data=%p)",
@@ -82,6 +89,13 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 			kprintf("BLOCK_DEALLOC(code=%d, disk_addr=%d)",
 				((struct block_dealloc_args*)recptr)->code,
 				((struct block_dealloc_args*)recptr)->disk_addr);
+			break;
+		case TRANS_BEGIN:
+			reclen = sizeof(struct trans_begin_args);
+			kprintf("TRANS_BEGIN(code=%d, trans_type=%d, id=%d)",
+				((struct trans_begin_args*)recptr)->code,
+				((struct trans_begin_args*)recptr)->trans_type,
+				((struct trans_begin_args*)recptr)->id);
 			break;
 		case BLOCK_WRITE:
 			reclen = sizeof(struct block_write_args);
@@ -161,6 +175,18 @@ void *jentry_inode_link(daddr_t disk_addr, uint16_t old_linkcount, uint16_t new_
 	return (void *)record;
 }
 
+void *jentry_trans_commit(int trans_type, int id)
+{
+	struct trans_commit_args *record;
+
+	record = kmalloc(sizeof(struct trans_commit_args));
+	record->code = TRANS_COMMIT;
+	record->trans_type = trans_type;
+	record->id = id;
+
+	return (void *)record;
+}
+
 void *jentry_meta_update(daddr_t disk_addr, size_t offset_addr, size_t data_len, void * old_data, void * new_data)
 {
 	struct meta_update_args *record;
@@ -183,6 +209,18 @@ void *jentry_block_dealloc(daddr_t disk_addr)
 	record = kmalloc(sizeof(struct block_dealloc_args));
 	record->code = BLOCK_DEALLOC;
 	record->disk_addr = disk_addr;
+
+	return (void *)record;
+}
+
+void *jentry_trans_begin(int trans_type, int id)
+{
+	struct trans_begin_args *record;
+
+	record = kmalloc(sizeof(struct trans_begin_args));
+	record->code = TRANS_BEGIN;
+	record->trans_type = trans_type;
+	record->id = id;
 
 	return (void *)record;
 }

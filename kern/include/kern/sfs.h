@@ -76,7 +76,9 @@
 #define TRUNCATE	7
 #define BLOCK_WRITE 8
 #define INODE_UPDATE_TYPE 9
-#define RESIZE 10
+#define TRANS_BEGIN 10
+#define TRANS_COMMIT 11
+#define RESIZE 12
 
 /*
  * On-disk superblock
@@ -230,5 +232,18 @@ struct inode_update_type_args {
 	int old_type;
 	int new_type;
 };
+
+struct trans_begin_args {
+	unsigned code;
+	int trans_type;
+	int id;
+};
+
+struct trans_commit_args {
+	unsigned code;
+	int trans_type;
+	int id;
+};
+
 
 #endif /* _KERN_SFS_H_ */

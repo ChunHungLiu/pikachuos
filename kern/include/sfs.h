@@ -78,6 +78,17 @@ struct sfs_fs {
 	struct lock *sfs_renamelock;	/* lock for sfs_rename() */
 
 	struct sfs_jphys *sfs_jphys;	/* physical journal container */
+
+	struct array *sfs_transactions;
+	struct lock *trans_lock;
+};
+
+// We probably want to have 2 functions for transaction begin
+// and transaction commit. Which will modify the transction
+// table and assign the pids.
+struct trans {
+	int id;
+	int first_lsn;
 };
 
 /*
@@ -85,5 +96,7 @@ struct sfs_fs {
  */
 int sfs_mount(const char *device);
 
+int sfs_trans_begin(struct sfs_fs* sfs);
+int sfs_trans_commit(struct sfs_fs* sfs);
 
 #endif /* _SFS_H_ */
