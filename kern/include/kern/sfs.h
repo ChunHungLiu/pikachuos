@@ -124,6 +124,15 @@ struct b_fsdata {
 };
 
 /*
+ * Transaction data for use during recovery
+ */
+struct recovery_transaction {
+	struct array *operations;
+	int id;
+	bool committed;
+};
+
+/*
  * On-disk journal container types and constants
  */
 
@@ -180,6 +189,7 @@ struct sfs_jphys_trim {
 
 struct block_alloc_args {
 	unsigned code;
+	int id;
 	daddr_t disk_addr;
 	daddr_t ref_addr;
 	size_t offset_addr;
@@ -187,6 +197,7 @@ struct block_alloc_args {
 
 struct inode_link_args {
 	unsigned code;
+	int id;
 	daddr_t disk_addr;
 	uint16_t old_linkcount;
 	uint16_t new_linkcount;
@@ -194,6 +205,7 @@ struct inode_link_args {
 
 struct meta_update_args {
 	unsigned code;
+	int id;
 	daddr_t disk_addr;
 	size_t offset_addr;
 	size_t data_len;
@@ -203,11 +215,13 @@ struct meta_update_args {
 
 struct block_dealloc_args {
 	unsigned code;
+	int id;
 	daddr_t disk_addr;
 };
 
 struct truncate_args {
 	unsigned code;
+	int id;
 	daddr_t inode_addr;
 	daddr_t start_block;
 	daddr_t end_block;
@@ -215,6 +229,7 @@ struct truncate_args {
 
 struct resize_args {
 	unsigned code;
+	int id;
 	daddr_t inode_addr;
 	size_t old_size;
 	size_t new_size;
@@ -222,6 +237,7 @@ struct resize_args {
 
 struct block_write_args {
 	unsigned code;
+	int id;
 	daddr_t written_addr;
 	uint32_t new_checksum;
 	bool new_alloc;
@@ -229,6 +245,7 @@ struct block_write_args {
 
 struct inode_update_type_args {
 	unsigned code;
+	int id;
 	daddr_t inode_addr;
 	int old_type;
 	int new_type;
@@ -236,14 +253,14 @@ struct inode_update_type_args {
 
 struct trans_begin_args {
 	unsigned code;
-	int trans_type;
 	int id;
+	int trans_type;
 };
 
 struct trans_commit_args {
 	unsigned code;
-	int trans_type;
 	int id;
+	int trans_type;
 };
 
 

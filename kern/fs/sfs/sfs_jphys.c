@@ -479,11 +479,11 @@ sfs_jphys_write(struct sfs_fs *sfs,
 }
 
 bool sfs_jphys_isreading(struct sfs_fs *sfs) {
-	return sfs->sfs_jphys->jp_writermode;
+	return sfs->sfs_jphys->jp_readermode;
 }
 
 bool sfs_jphys_iswriting(struct sfs_fs *sfs) {
-	return sfs->sfs_jphys->jp_readermode;
+	return sfs->sfs_jphys->jp_writermode;
 }
 
 ////////////////////////////////////////////////////////////

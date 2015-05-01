@@ -78,6 +78,9 @@ def gen_functions(structs):
 		for ctype, name in structs[struct]:
 			if "code" in name:
 				continue
+			if name == "id":
+				initializations.append("record->id = curproc->pid;")
+				continue
 			entry_args.append("%s %s" % (ctype, name))
 			initializations.append("record->%s = %s;" % (name, name))
 
