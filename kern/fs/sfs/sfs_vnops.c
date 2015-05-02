@@ -984,6 +984,23 @@ die_loadsv:
 	return result;
 }
 
+static
+void 
+itoa(int n, char s[])
+{
+    int i, sign;
+ 
+    if ((sign = n) < 0)  /* record sign */
+        n = -n;          /* make n positive */
+        i = 0;
+    do {       /* generate digits in reverse order */
+        s[i++] = n % 10 + '0';   /* get next digit */
+    } while ((n /= 10) > 0);     /* delete it */
+    if (sign < 0)
+        s[i++] = '-';
+    s[i] = '\0';
+}
+
 /*
  * Delete a file.
  *
@@ -1058,9 +1075,12 @@ sfs_remove(struct vnode *dir, const char *name)
 		goto out_reference;
 	}
 
+	char new_name[60];
+	itoa((int) victim->sv_ino, new_name);
+
 	//TODO: need to get the dir_sv for sure.
 	lock_acquire(grave_node->sv_lock);
-	result = sfs_dir_link(grave_node, name, victim->sv_ino, NULL);
+	result = sfs_dir_link(grave_node, new_name, victim->sv_ino, NULL);
 	if (result) {
 		goto out_reference;
 	}
