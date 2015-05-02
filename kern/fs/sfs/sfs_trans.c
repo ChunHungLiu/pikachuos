@@ -95,7 +95,7 @@ int sfs_checkpoint(struct sfs_fs* sfs) {
 		oldest_lsn = sfs_jphys_peeknextlsn(sfs);
 	}
 
-	kprintf("Trim to %d\n", oldest_lsn);
+	// kprintf("Trim to %d\n", oldest_lsn);
 	sfs_jphys_trim(sfs, oldest_lsn);
 
 	// We sucessfully took a checkpoint! Clear the odometer.
