@@ -123,6 +123,7 @@ struct b_fsdata {
 	daddr_t diskblock;
 	uint64_t oldest_lsn;
 	uint64_t newest_lsn;
+	struct buf *buf;
 };
 
 /*

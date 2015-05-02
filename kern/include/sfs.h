@@ -80,6 +80,8 @@ struct sfs_fs {
 	struct sfs_jphys *sfs_jphys;	/* physical journal container */
 
 	struct array *sfs_transactions;
+	uint64_t newest_freemap_lsn;	/* most recent lsn of an operation modifying the freemap */
+	uint64_t oldest_freemap_lsn;	/* oldest unwritten lsn of an operation modifying the freemap */
 	struct lock *trans_lock;
 };
 
