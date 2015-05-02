@@ -27,7 +27,7 @@ uint32_t checksum(unsigned char *data) {
 
 /* Generally won't need to modify anything below this */
 
-#undef sfs_jphys_write_wrapper
+// #undef sfs_jphys_write_wrapper
 
 sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, const char* func,
 		struct sfs_fs *sfs, struct sfs_jphys_writecontext *ctx, void *rec) {
@@ -150,7 +150,7 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	return lsn;
 }
 
-#define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
+// #define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
 
 void jentry_print(void* recptr) {
 	int code = *((int*)recptr);

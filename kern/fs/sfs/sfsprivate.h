@@ -180,6 +180,6 @@ uint32_t checksum(unsigned char *data);
 void sfs_trans_callback(struct sfs_fs *sfs, sfs_lsn_t newlsn,
 	struct sfs_jphys_writecontext *ctx);
 
-#define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
+// #define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
 
 #endif /* _SFSPRIVATE_H_ */

@@ -249,7 +249,7 @@ writerootdir(void)
 
 	sfi.sfi_size = SWAP32(sizeof(struct sfs_direntry) * 2);
 	sfi.sfi_type = SWAP16(SFS_TYPE_DIR);
-	sfi.sfi_linkcount = SWAP16(2);
+	sfi.sfi_linkcount = SWAP16(3);
 	sfi.sfi_direct[0] = SWAP32(rootdir_data_block);
 
 	/* Write it out */
@@ -290,7 +290,7 @@ writegraveyard(void)
 	bzero((void *)sfd, sizeof(sfd));
 	sfd[0].sfd_ino = SWAP32(SFS_GRAVEYARD_INO);
 	strcpy(sfd[0].sfd_name, ".");
-	sfd[1].sfd_ino = SWAP32(SFS_GRAVEYARD_INO);
+	sfd[1].sfd_ino = SWAP32(SFS_ROOTDIR_INO);
 	strcpy(sfd[1].sfd_name, "..");
 
 	diskwrite(sfd, rootdir_data_block + 1);
