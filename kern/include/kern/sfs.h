@@ -46,9 +46,10 @@
 #define SFS_DBPERIDB      128           /* # direct blks per indirect blk */
 #define SFS_NAMELEN       60            /* max length of filename */
 #define SFS_SUPER_BLOCK   0             /* block the superblock lives in */
-#define SFS_FREEMAP_START 2             /* 1st block of the freemap */
+#define SFS_FREEMAP_START 3             /* 1st block of the freemap */
 #define SFS_NOINO         0             /* inode # for free dir entry */
 #define SFS_ROOTDIR_INO   1             /* loc'n of the root dir inode */
+#define SFS_GRAVEYARD_INO 2             /* loc'n of the root dir inode */
 
 /* Number of bits in a block */
 #define SFS_BITSPERBLOCK (SFS_BLOCKSIZE * CHAR_BIT)
@@ -66,6 +67,19 @@
 #define SFS_TYPE_INVAL    0       /* Should not appear on disk */
 #define SFS_TYPE_FILE     1
 #define SFS_TYPE_DIR      2
+
+// We start from 3 because 0, 1, 2 are reserved
+
+#define BLOCK_ALLOC	3
+#define	INODE_LINK  4
+#define META_UPDATE 5
+#define BLOCK_DEALLOC 6
+#define TRUNCATE	7
+#define BLOCK_WRITE 8
+#define INODE_UPDATE_TYPE 9
+#define TRANS_BEGIN 10
+#define TRANS_COMMIT 11
+#define RESIZE 12
 
 /*
  * On-disk superblock
@@ -99,6 +113,26 @@ struct sfs_dinode {
 struct sfs_direntry {
 	uint32_t sfd_ino;			/* Inode number */
 	char sfd_name[SFS_NAMELEN];		/* Filename */
+};
+
+/*
+ * Buffer metadata
+ */
+struct b_fsdata {
+	struct sfs_fs *sfs;
+	daddr_t diskblock;
+	uint64_t oldest_lsn;
+	uint64_t newest_lsn;
+	struct buf *buf;
+};
+
+/*
+ * Transaction data for use during recovery
+ */
+struct recovery_transaction {
+	struct array *operations;
+	int id;
+	bool committed;
 };
 
 /*
@@ -154,6 +188,81 @@ struct sfs_jphys_header {
 /* Contents for SFS_JPHYS_TRIM */
 struct sfs_jphys_trim {
 	uint64_t jt_taillsn;			/* Tail LSN */
+};
+
+struct block_alloc_args {
+	unsigned code;
+	int id;
+	daddr_t disk_addr;
+	daddr_t ref_addr;
+	size_t offset_addr;
+};
+
+struct inode_link_args {
+	unsigned code;
+	int id;
+	daddr_t disk_addr;
+	uint16_t old_linkcount;
+	uint16_t new_linkcount;
+};
+
+struct meta_update_args {	// ignore
+	unsigned code;
+	int id;
+	daddr_t disk_addr;
+	size_t offset_addr;
+	size_t data_len;
+};
+
+struct block_dealloc_args {
+	unsigned code;
+	int id;
+	daddr_t disk_addr;
+};
+
+struct truncate_args {
+	unsigned code;
+	int id;
+	daddr_t inode_addr;
+	daddr_t start_block;
+	daddr_t end_block;
+};
+
+struct resize_args {
+	unsigned code;
+	int id;
+	daddr_t inode_addr;
+	size_t old_size;
+	size_t new_size;
+};
+
+struct block_write_args {
+	unsigned code;
+	int id;
+	daddr_t written_addr;
+	uint32_t new_checksum;
+	bool new_alloc;
+	bool last_write;	// ignore
+};
+
+struct inode_update_type_args {
+	unsigned code;
+	int id;
+	daddr_t inode_addr;
+	int old_type;
+	int new_type;
+};
+
+struct trans_begin_args {
+	unsigned code;
+	int id;
+	int trans_type;
+};
+
+struct trans_commit_args {
+	unsigned code;
+	int id;
+	int trans_type;
 };
 
 

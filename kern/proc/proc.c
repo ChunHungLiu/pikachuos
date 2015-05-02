@@ -95,7 +95,7 @@ proc_create(const char *name)
 		proc->pid = KPROC_PID;
 	} else {
 		// probably a race condition here?
-		proc->pid = new_pid();		
+		proc->pid = new_pid();
 	}
 	proc_table[proc->pid] = proc;
 

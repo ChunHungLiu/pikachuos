@@ -201,7 +201,7 @@ syscall(struct trapframe *tf)
 	    break;
 
 	    case SYS_execv:
-	    err = sys_execv((char*)tf->tf_a0, (char **)tf->tf_a1, &retval);
+	    err = sys_execv((char*)tf->tf_a0, (char **)tf->tf_a1, &retval, false);
 	    break;
 	    
 	    case SYS_sbrk:

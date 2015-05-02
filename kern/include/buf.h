@@ -193,5 +193,8 @@ void buffer_printstats(void);
  */
 void buffer_bootstrap(void);
 
+struct array *buffer_get_dirty_array(void);
+struct lock *buffer_get_lock(void);
 
+struct buf *buffer_find(struct fs *fs, daddr_t physblock);
 #endif /* _BUF_H_ */

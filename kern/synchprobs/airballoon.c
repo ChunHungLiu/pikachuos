@@ -386,7 +386,7 @@ airballoon(int nargs, char **args) {
 	for (i = 0; i < 2 * NTHREADS + 1; i++) {
 		P(thread_lock);
 	}
-	
+
 	// cleanup
 	num_deleted = 0;
 

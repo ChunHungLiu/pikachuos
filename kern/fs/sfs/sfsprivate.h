@@ -104,6 +104,7 @@ int sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 		struct sfs_vnode **ret);
 int sfs_makeobj(struct sfs_fs *sfs, int type, struct sfs_vnode **ret);
 int sfs_getroot(struct fs *fs, struct vnode **ret);
+int sfs_getgraveyard(struct fs *fs, struct sfs_vnode **ret);
 
 /* Functions in sfs_io.c */
 int sfs_readblock(struct fs *fs, daddr_t block, void *data, size_t len);
@@ -154,6 +155,31 @@ void sfs_jphys_stopreading(struct sfs_fs *sfs);
 int sfs_jphys_startwriting(struct sfs_fs *sfs);
 void sfs_jphys_unstartwriting(struct sfs_fs *sfs);
 void sfs_jphys_stopwriting(struct sfs_fs *sfs);
+bool sfs_jphys_isreading(struct sfs_fs *sfs);
+bool sfs_jphys_iswriting(struct sfs_fs *sfs);
 
+sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
+		struct sfs_jphys_writecontext *ctx,	void *rec);
+sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, const char* func,
+		struct sfs_fs *sfs,	struct sfs_jphys_writecontext *ctx, void *rec);
+void *jentry_block_alloc(daddr_t disk_addr, 
+	daddr_t ref_addr, size_t offset_addr);
+void *jentry_inode_link(daddr_t disk_addr, 
+	uint16_t old_linkcount, uint16_t new_linkcount);
+void *jentry_meta_update(daddr_t disk_addr, size_t offset_addr, size_t data_len, void * old_data, void * new_data);
+void *jentry_block_dealloc(daddr_t disk_addr);
+void *jentry_truncate(daddr_t inode, daddr_t start, daddr_t end);
+void *jentry_trans_commit(int trans_type);
+void *jentry_trans_begin(int trans_type);
+void *jentry_inode_update_type(daddr_t inode_addr, int old_type, int new_type);
+void *jentry_block_write(daddr_t written_addr, uint32_t new_checksum, bool new_alloc);
+void *jentry_resize(daddr_t inode_addr, size_t old_size, size_t new_size);
+void jentry_print(void* recptr);
+uint32_t checksum(unsigned char *data);
+
+void sfs_trans_callback(struct sfs_fs *sfs, sfs_lsn_t newlsn,
+	struct sfs_jphys_writecontext *ctx);
+
+// #define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
 
 #endif /* _SFSPRIVATE_H_ */

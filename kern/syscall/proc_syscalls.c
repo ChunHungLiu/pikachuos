@@ -164,7 +164,7 @@ int sys_getpid(pid_t *retval) {
 #undef ARG_MAX
 #define ARG_MAX 4096
 
-int sys_execv(char* progname, char** args, int *retval) {
+int sys_execv(char* progname, char** args, int *retval, bool iskernel) {
 	int result;
 	int *args_len;
 	size_t len;
@@ -184,34 +184,45 @@ int sys_execv(char* progname, char** args, int *retval) {
 
 	if (args == NULL || progname == NULL) {
 		*retval = -1;
-        return EFAULT;
-    }
+		return EFAULT;
+	}
 
-   	result = copyinstr((userptr_t)args, temp, ARG_MAX, &len);
-   	if (result) {
-		*retval = -1;
-   		return result;
-   	}
-
-	// Figure out nargs, and the length for each arg string
-	while(args[nargs] != NULL) {
-		result = copyinstr((userptr_t)args[nargs], temp, ARG_MAX, &len);
+	if (!iskernel) {
+		result = copyinstr((userptr_t)args, temp, ARG_MAX, &len);
 		if (result) {
 			*retval = -1;
 			return result;
 		}
+	}
+
+	// Figure out nargs, and the length for each arg string
+	while(args[nargs] != NULL) {
+		if (iskernel) {
+			len = strlen(args[nargs]) + 1;
+			if (len == 1) {
+				nargs--;
+				break;
+			}
+			strcpy(temp, args[nargs]);
+		} else {
+			result = copyinstr((userptr_t)args[nargs], temp, ARG_MAX, &len);
+			if (result) {
+				*retval = -1;
+				return result;
+			}
+		}
 		args_len[nargs] = len;
 		total_len += len;
-        nargs += 1;
-    }
-    kfree(temp);
-    
-    if (total_len > ARG_MAX) {
+		nargs += 1;
+	}
+	kfree(temp);
+
+	if (total_len > ARG_MAX) {
 		*retval = -1;
-    	return E2BIG;
-    }
-    
-    kern_args = kmalloc(sizeof(char*) * nargs);
+		return E2BIG;
+	}
+
+	kern_args = kmalloc(sizeof(char*) * nargs);
 
 	// Go through args and copy everything over to kern_args using copyinstr
 	for (int i = 0; i < nargs; i++) {
@@ -220,7 +231,13 @@ int sys_execv(char* progname, char** args, int *retval) {
 			*retval = -1;
 			return ENOMEM;
 		}
-        copyinstr((userptr_t)args[i], kern_args[i], ARG_MAX, NULL);
+
+		if (iskernel) {
+			strcpy(kern_args[i], args[i]);
+			len = strlen(kern_args[i]);
+		} else {
+			copyinstr((userptr_t)args[i], kern_args[i], ARG_MAX, NULL);
+		}
 	}
 
 	// This is from runprogram 
@@ -228,7 +245,14 @@ int sys_execv(char* progname, char** args, int *retval) {
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 
-	result = copyinstr((userptr_t)progname, kern_progname, PATH_MAX, NULL);
+
+	if (iskernel) {
+		strcpy(kern_progname, progname);
+		len = strlen(kern_progname);
+	} else {
+		result = copyinstr((userptr_t)progname, kern_progname, PATH_MAX, NULL);
+	}
+
 	if (*kern_progname == 0) {
 		*retval = -1;
 		return EISDIR;
@@ -247,8 +271,10 @@ int sys_execv(char* progname, char** args, int *retval) {
 	}
 
 	// Blow up the current addrspace. TODO, this may be problematic
-	as_destroy(curproc->p_addrspace);
-    curproc->p_addrspace = NULL;
+	if (!iskernel) {
+		as_destroy(curproc->p_addrspace);
+		curproc->p_addrspace = NULL;
+	}
 
 	/* We should be a new process. */
 	KASSERT(proc_getas() == NULL);
@@ -266,7 +292,8 @@ int sys_execv(char* progname, char** args, int *retval) {
 	as_activate();
 
 	/* Intialize file table, not needed for execv */
-	// filetable_init();
+	if (iskernel)
+		filetable_init();
 
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
@@ -289,29 +316,29 @@ int sys_execv(char* progname, char** args, int *retval) {
 	}
 
 	// Clear space for arg pointers +1 for NULL terminator
-    stackptr -= (sizeof(char*)) * (nargs + 1);
+	stackptr -= (sizeof(char*)) * (nargs + 1);
 
-    // Convenience method for indexing
-    usr_argv = (userptr_t*)stackptr;
+	// Convenience method for indexing
+	usr_argv = (userptr_t*)stackptr;
 
-    for(int i = 0; i < nargs; i++ ) {
-    	// Clear out space for an arg string
-        stackptr -= sizeof(char) * (strlen(kern_args[i]) + 1);
-        // Assign the string's pointer to usr_argv
-        usr_argv[i] = (userptr_t)stackptr;
-        // Copy over string
-        copyout(kern_args[i], usr_argv[i],
-        	sizeof(char) * (strlen(kern_args[i]) + 1));
-    }
+	for(int i = 0; i < nargs; i++ ) {
+		// Clear out space for an arg string
+		stackptr -= sizeof(char) * (strlen(kern_args[i]) + 1);
+		// Assign the string's pointer to usr_argv
+		usr_argv[i] = (userptr_t)stackptr;
+		// Copy over string
+		copyout(kern_args[i], usr_argv[i],
+			sizeof(char) * (strlen(kern_args[i]) + 1));
+	}
 
-    // NULL terminate usr_argv
-    usr_argv[nargs] = NULL;
+	// NULL terminate usr_argv
+	usr_argv[nargs] = NULL;
 
-    // Free memory
-    for(int i = 0; i < nargs; i++) {
-        kfree(kern_args[i]);
-    }
-    kfree(kern_args);
+	// Free memory
+	for(int i = 0; i < nargs; i++) {
+		kfree(kern_args[i]);
+	}
+	kfree(kern_args);
 
 	/* Warp to user mode. */
 	enter_new_process(nargs /*argc*/, (userptr_t)usr_argv /*userspace addr of argv*/,

@@ -28,6 +28,7 @@
  */
 
 #include <sys/types.h>	/* for CHAR_BIT */
+#include <stdbool.h>
 #include <limits.h>	/* also for CHAR_BIT */
 #include <stdint.h>
 #include <assert.h>

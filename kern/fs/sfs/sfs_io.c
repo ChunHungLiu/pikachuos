@@ -126,12 +126,12 @@ sfs_writeblock(struct fs *fs, daddr_t block, void *fsbufdata,
 	struct uio ku;
 	bool isjournal;
 	int result;
-
-	(void)fsbufdata;
+	struct b_fsdata* b_fsdata = (struct b_fsdata*)fsbufdata;
 
 	KASSERT(len == SFS_BLOCKSIZE);
 
 	isjournal = sfs_block_is_journal(sfs, block);
+	//kprintf("Writeblock metadata: %p\n", fsbufdata);
 
 	if (isjournal) {
 		/*
@@ -152,10 +152,22 @@ sfs_writeblock(struct fs *fs, daddr_t block, void *fsbufdata,
 		 * Instead, we use special-case logic in the journal
 		 * code for this situation.
 		 */
+		//kprintf("Writing journal blocks\n");
 		result = sfs_jphys_flushforjournalblock(sfs, block);
 		if (result) {
 			return result;
 		}
+	} else if (b_fsdata != NULL) {
+		//kprintf("\n\nBuffer %p is being written", b_fsdata->buf); 
+		// This is a standard non-journal block
+		// Enforce write-ahead logging. Flush up to the most recent lsn to touch
+		//  this buffer
+		KASSERT(b_fsdata->newest_lsn != 0);
+		//kprintf("FLUSH (daddr %d): lsn %lld", b_fsdata->diskblock, b_fsdata->newest_lsn);
+		sfs_jphys_flush(sfs, b_fsdata->newest_lsn);
+		//kprintf("...Done.\n\n");
+		b_fsdata->newest_lsn = 0;
+		b_fsdata->oldest_lsn = 0;
 	}
 
 	SFSUIO(&iov, &ku, data, block, UIO_WRITE);
@@ -194,10 +206,11 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 {
 	struct sfs_fs *sfs = sv->sv_absvn.vn_fs->fs_data;
 	struct buf *iobuffer;
-	char *ioptr;
+	unsigned char *ioptr;
 	daddr_t diskblock;
 	uint32_t fileblock;
 	int result;
+	unsigned new_checksum = 0;
 
 	/* Allocate missing blocks if and only if we're writing */
 	bool doalloc = (uio->uio_rw==UIO_WRITE);
@@ -246,10 +259,15 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 	}
 
 	/*
-	 * If it was a write, mark the modified block dirty.
+	 * If it was a write, mark the modified block dirty and journal
 	 */
 	if (uio->uio_rw == UIO_WRITE) {
-		buffer_mark_dirty(iobuffer);
+		// Compute checksum and journal
+		new_checksum = checksum(ioptr);
+		sfs_jphys_write_wrapper(sfs, NULL, 
+			jentry_block_write(diskblock, new_checksum, false));
+
+		buffer_mark_dirty(iobuffer);	// Journalled
 	}
 
 	buffer_release(iobuffer);
@@ -274,6 +292,7 @@ sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
 	uint32_t fileblock;
 	int result;
 	bool doalloc = (uio->uio_rw==UIO_WRITE);
+	unsigned new_checksum = 0;
 
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 
@@ -320,8 +339,11 @@ sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
 	}
 
 	if (uio->uio_rw == UIO_WRITE) {
+		new_checksum = checksum(ioptr);
+		sfs_jphys_write_wrapper(sfs, NULL, 
+			jentry_block_write(diskblock, new_checksum, false));
 		buffer_mark_valid(iobuf);
-		buffer_mark_dirty(iobuf);
+		buffer_mark_dirty(iobuf);	// Journalled
 	}
 
 	buffer_release(iobuf);
@@ -436,6 +458,10 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio)
 	if (uio->uio_resid != origresid &&
 	    uio->uio_rw == UIO_WRITE &&
 	    uio->uio_offset > (off_t)inodeptr->sfi_size) {
+		sfs_jphys_write_wrapper(sv->sv_absvn.vn_fs->fs_data, NULL,
+			jentry_resize(	sv->sv_ino,	// disk_addr
+							inodeptr->sfi_size,	// old_size
+							uio->uio_offset));	// new_size
 		inodeptr->sfi_size = uio->uio_offset;
 		sfs_dinode_mark_dirty(sv);
 	}
@@ -519,19 +545,34 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 		return result;
 	}
 
+
 	ioptr = buffer_map(iobuf);
 	if (rw == UIO_READ) {
 		/* Copy out the selected region */
 		memcpy(data, ioptr + blockoffset, len);
 	}
 	else {
+		// Journal this!!!
+		ioptr = buffer_map(iobuf);
+		void *old_data = ioptr + blockoffset;
+		sfs_jphys_write_wrapper(sfs, /*context*/ NULL, 
+			jentry_meta_update(	diskblock, 
+								blockoffset, 
+								len,
+								old_data, 
+								data));
+
 		/* Update the selected region */
 		memcpy(ioptr + blockoffset, data, len);
-		buffer_mark_dirty(iobuf);
+		buffer_mark_dirty(iobuf);	// Journalled (meta_update)
 
 		/* Update the vnode size if needed */
 		endpos = actualpos + len;
 		if (endpos > (off_t)dino->sfi_size) {
+			sfs_jphys_write_wrapper(sfs, NULL,
+				jentry_resize(	sv->sv_ino,	// disk_addr
+								dino->sfi_size,	// old_size
+								endpos));	// new_size
 			dino->sfi_size = endpos;
 			sfs_dinode_mark_dirty(sv);
 		}

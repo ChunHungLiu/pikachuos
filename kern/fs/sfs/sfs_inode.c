@@ -168,7 +168,7 @@ sfs_dinode_mark_dirty(struct sfs_vnode *sv)
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 
 	KASSERT(sv->sv_dinobuf != NULL);
-	buffer_mark_dirty(sv->sv_dinobuf);
+	buffer_mark_dirty(sv->sv_dinobuf);	// dinode_mark_dirty: Does not need to be journalled.
 }
 
 /*
@@ -191,6 +191,25 @@ sfs_reclaim(struct vnode *v)
 	unsigned ix, i, num;
 	bool buffers_needed;
 	int result;
+	int slot;
+	struct sfs_vnode *grave_node;
+	sfs_trans_begin(sfs, TRANS_RECLAIM);
+
+	buffers_needed = !curthread->t_did_reserve_buffers;
+	if (buffers_needed) {
+		result = sfs_getgraveyard(&sfs->sfs_absfs, &grave_node);
+		if (result) {
+			panic("Gravyard is fucked up");
+		}
+		reserve_buffers(SFS_BLOCKSIZE);
+	} else {
+		unreserve_buffers(SFS_BLOCKSIZE);
+		result = sfs_getgraveyard(&sfs->sfs_absfs, &grave_node);
+		if (result) {
+			panic("Gravyard is fucked up");
+		}
+		reserve_buffers(SFS_BLOCKSIZE);
+	}
 
 	lock_acquire(sv->sv_lock);
 	lock_acquire(sfs->sfs_vnlock);
@@ -210,6 +229,7 @@ sfs_reclaim(struct vnode *v)
 		spinlock_release(&v->vn_countlock);
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sv->sv_lock);
+		sfs_trans_commit(sfs, TRANS_RECLAIM);
 		return EBUSY;
 	}
 	spinlock_release(&v->vn_countlock);
@@ -220,10 +240,8 @@ sfs_reclaim(struct vnode *v)
 	 * from inside, so we might or might not be inside another
 	 * operation.
 	 */
-	buffers_needed = !curthread->t_did_reserve_buffers;
-	if (buffers_needed) {
-		reserve_buffers(SFS_BLOCKSIZE);
-	}
+	// sfs_trans_begin(sfs, TRANS_RECLAIM);
+
 
 	/* Get the on-disk inode. */
 	result = sfs_dinode_load(sv);
@@ -237,10 +255,26 @@ sfs_reclaim(struct vnode *v)
 		if (buffers_needed) {
 			unreserve_buffers(SFS_BLOCKSIZE);
 		}
+		sfs_trans_commit(sfs, TRANS_RECLAIM);
 		return result;
 	}
 	iptr = sfs_dinode_map(sv);
 
+	lock_acquire(grave_node->sv_lock);
+	result = sfs_dir_findino(grave_node, sv->sv_ino, NULL, &slot);
+	if (!result) {
+		result = sfs_dir_unlink(grave_node, slot);
+		if (result) {
+			panic("Remove from GY is fucked up");
+		}
+		KASSERT(iptr->sfi_linkcount > 0);
+		sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(sv->sv_ino, 
+			iptr->sfi_linkcount, iptr->sfi_linkcount - 1));
+		iptr->sfi_linkcount--;
+		sfs_dinode_mark_dirty(sv);	// Journaled. Linkcount update
+	}
+	lock_release(grave_node->sv_lock);
+	
 	/* If there are no on-disk references to the file either, erase it. */
 	if (iptr->sfi_linkcount == 0) {
 		result = sfs_itrunc(sv, 0);
@@ -251,6 +285,7 @@ sfs_reclaim(struct vnode *v)
 			if (buffers_needed) {
 				unreserve_buffers(SFS_BLOCKSIZE);
 			}
+			sfs_trans_commit(sfs, TRANS_RECLAIM);
 			return result;
 		}
 		sfs_dinode_unload(sv);
@@ -289,6 +324,8 @@ sfs_reclaim(struct vnode *v)
 	lock_release(sv->sv_lock);
 
 	sfs_vnode_destroy(sv);
+
+	sfs_trans_commit(sfs, TRANS_RECLAIM);
 
 	/* Done */
 	return 0;
@@ -376,13 +413,17 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 	 */
 	if (forcetype != SFS_TYPE_INVAL) {
 		KASSERT(dino->sfi_type == SFS_TYPE_INVAL);
+		sfs_jphys_write_wrapper(sfs, NULL,
+			jentry_inode_update_type(	ino,	// inode_addr
+										SFS_TYPE_INVAL,	// old_data
+										forcetype));	// new_data
 		dino->sfi_type = forcetype;
-		buffer_mark_dirty(dinobuf);
+		buffer_mark_dirty(dinobuf);	// Journalled
 	}
 
 	/*
 	 * Choose the function table based on the object type,
-	 * and cache the type in the vnode.
+	 * and cache the type in the vnode. copyinstr strcpy
 	 */
 	switch (dino->sfi_type) {
 	    case SFS_TYPE_FILE:
@@ -460,10 +501,19 @@ sfs_makeobj(struct sfs_fs *sfs, int type, struct sfs_vnode **ret)
 	 * number is the block number, so just get a block.)
 	 */
 
+	//       V Journalled!
 	result = sfs_balloc(sfs, &ino, NULL);
 	if (result) {
 		return result;
 	}
+
+	// We have space for an inode! And make sure I understand how this function
+	// is supposed to work
+	// This may not actually go here. We may be able to move this further down if the dino buffer is not dirty
+	// KASSERT(dino->sfi_type == type);
+	// KASSERT(dino->sfi_size == 0);
+	// KASSERT(dino->sfi_linkcount == 0);
+	// sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_create(ino, type, dino->sfi_size, dino->sfi_linkcount));
 
 	/*
 	 * Now load a vnode for it.
@@ -525,5 +575,41 @@ sfs_getroot(struct fs *fs, struct vnode **ret)
 	unreserve_buffers(SFS_BLOCKSIZE);
 
 	*ret = &sv->sv_absvn;
+	return 0;
+}
+
+/*
+ * Get vnode for the graveyard of the filesystem.
+ * The graveyard vnode is always found in block 2 (SFS_GRAVYARD_INO).
+ *
+ * Locking: sfs_loadvnode locks the inode table and returns the
+ * new vnode locked; we just unlock it.
+ */
+int
+sfs_getgraveyard(struct fs *fs, struct sfs_vnode **ret)
+{
+	struct sfs_fs *sfs = fs->fs_data;
+	struct sfs_vnode *sv;
+	int result;
+
+	reserve_buffers(SFS_BLOCKSIZE);
+
+	result = sfs_loadvnode(sfs, SFS_GRAVEYARD_INO, SFS_TYPE_INVAL, &sv);
+	if (result) {
+		kprintf("sfs: getgraveyard: Cannot load root vnode\n");
+		unreserve_buffers(SFS_BLOCKSIZE);
+		return result;
+	}
+
+	if (sv->sv_type != SFS_TYPE_DIR) {
+		kprintf("sfs: getgraveyard: not directory (type %u)\n",
+		      sv->sv_type);
+		unreserve_buffers(SFS_BLOCKSIZE);
+		return EINVAL;
+	}
+
+	unreserve_buffers(SFS_BLOCKSIZE);
+
+	*ret = sv;
 	return 0;
 }

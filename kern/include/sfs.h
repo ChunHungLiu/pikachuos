@@ -30,6 +30,17 @@
 #ifndef _SFS_H_
 #define _SFS_H_
 
+// The actual transaction types
+#define TRANS_WRITE 0
+#define TRANS_TRUNCATE 1
+#define TRANS_CREAT 2
+#define TRANS_LINK 3
+#define TRANS_MKDIR 4
+#define TRANS_RMDIR 5
+#define TRANS_REMOVE 6
+#define TRANS_RENAME 7
+#define TRANS_RECLAIM 8
+
 
 /*
  * Header for SFS, the Simple File System.
@@ -78,6 +89,19 @@ struct sfs_fs {
 	struct lock *sfs_renamelock;	/* lock for sfs_rename() */
 
 	struct sfs_jphys *sfs_jphys;	/* physical journal container */
+
+	struct array *sfs_transactions;
+	uint64_t newest_freemap_lsn;	/* most recent lsn of an operation modifying the freemap */
+	uint64_t oldest_freemap_lsn;	/* oldest unwritten lsn of an operation modifying the freemap */
+	struct lock *trans_lock;
+};
+
+// We probably want to have 2 functions for transaction begin
+// and transaction commit. Which will modify the transction
+// table and assign the pids.
+struct trans {
+	int id;
+	unsigned first_lsn;
 };
 
 /*
@@ -85,5 +109,8 @@ struct sfs_fs {
  */
 int sfs_mount(const char *device);
 
+int sfs_trans_begin(struct sfs_fs* sfs, int trans_type);
+int sfs_trans_commit(struct sfs_fs* sfs, int trans_type);
+int sfs_checkpoint(struct sfs_fs* sfs);
 
 #endif /* _SFS_H_ */

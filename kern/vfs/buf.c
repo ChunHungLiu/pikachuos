@@ -1176,7 +1176,6 @@ buffer_evict(struct buf **ret)
 	return 0;
 }
 
-static
 struct buf *
 buffer_find(struct fs *fs, daddr_t physblock)
 {
@@ -2036,4 +2035,12 @@ buffer_bootstrap(void)
 	if (result) {
 		panic("Starting syncer failed\n");
 	}
+}
+
+struct array *buffer_get_dirty_array() {
+	return (struct array *)&dirty_buffers;
+}
+
+struct lock *buffer_get_lock() {
+	return buffer_lock;
 }

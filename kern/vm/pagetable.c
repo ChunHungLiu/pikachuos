@@ -34,6 +34,9 @@
  */
 inline struct pt_entry* pte_lock(struct addrspace *as, vaddr_t vaddr) {
     int index_hi = vaddr >> 22;
+    if (as->pt_locks[index_hi] == NULL) {
+        as->pt_locks[index_hi] = lock_create("pt");
+    }
     lock_acquire(as->pt_locks[index_hi]);
     return pt_get_entry(as, vaddr);
 }

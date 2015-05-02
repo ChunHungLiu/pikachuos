@@ -478,6 +478,14 @@ sfs_jphys_write(struct sfs_fs *sfs,
 					code, rec, len);
 }
 
+bool sfs_jphys_isreading(struct sfs_fs *sfs) {
+	return sfs->sfs_jphys->jp_readermode;
+}
+
+bool sfs_jphys_iswriting(struct sfs_fs *sfs) {
+	return sfs->sfs_jphys->jp_writermode;
+}
+
 ////////////////////////////////////////////////////////////
 // journal flushing
 
@@ -685,7 +693,7 @@ sfs_jphys_flushall(struct sfs_fs *sfs)
 	if (result) {
 		return result;
 	}
-	
+
 	return 0;
 }
 

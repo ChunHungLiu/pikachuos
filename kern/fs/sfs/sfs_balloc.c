@@ -58,10 +58,14 @@ sfs_clearblock(struct sfs_fs *sfs, daddr_t block, struct buf **bufret)
 		return result;
 	}
 
+	// We have successfully allocated a block in the freemap. Journal it
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, 
+		jentry_block_alloc(block, 0, 0));
+
 	ptr = buffer_map(buf);
 	bzero(ptr, SFS_BLOCKSIZE);
 	buffer_mark_valid(buf);
-	buffer_mark_dirty(buf);
+	buffer_mark_dirty(buf);	// a4: sfs_clearblock: does not need journalling
 
 	if (bufret != NULL) {
 		*bufret = buf;
@@ -94,6 +98,7 @@ sfs_balloc(struct sfs_fs *sfs, daddr_t *diskblock, struct buf **bufret)
 		lock_release(sfs->sfs_freemaplock);
 		return result;
 	}
+
 	sfs->sfs_freemapdirty = true;
 
 	lock_release(sfs->sfs_freemaplock);
@@ -117,6 +122,9 @@ void
 sfs_bfree_prelocked(struct sfs_fs *sfs, daddr_t diskblock)
 {
 	KASSERT(lock_do_i_hold(sfs->sfs_freemaplock));
+
+	// Block is getting deallocated. Journal this!!!
+	sfs_jphys_write_wrapper(sfs, NULL, jentry_block_dealloc(diskblock));
 
 	bitmap_unmark(sfs->sfs_freemap, diskblock);
 	sfs->sfs_freemapdirty = true;

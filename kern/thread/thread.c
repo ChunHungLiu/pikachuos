@@ -1014,7 +1014,7 @@ thread_consider_migration(void)
 				break;
 			t = threadlist_remhead(&victims);
 			if (t == NULL)
-				continue;	
+				continue;
 			/*
 			 * Ordinarily, curthread will not appear on
 			 * the run queue. However, it can under the

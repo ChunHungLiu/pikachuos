@@ -417,6 +417,8 @@ optfile   sfs    fs/sfs/sfs_inode.c
 optfile   sfs    fs/sfs/sfs_io.c
 optfile   sfs    fs/sfs/sfs_jphys.c
 optfile   sfs    fs/sfs/sfs_vnops.c
+optfile   sfs    fs/sfs/sfs_jentries.c
+optfile   sfs    fs/sfs/sfs_trans.c
 
 #
 # netfs (the networked filesystem - you might write this as one assignment)

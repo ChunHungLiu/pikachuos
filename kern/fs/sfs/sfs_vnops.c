@@ -165,8 +165,10 @@ int
 sfs_write(struct vnode *v, struct uio *uio)
 {
 	struct sfs_vnode *sv = v->vn_data;
+	struct sfs_fs *sfs = v->vn_fs->fs_data;
 	int result;
 
+	sfs_trans_begin(sfs, TRANS_WRITE);
 	KASSERT(uio->uio_rw==UIO_WRITE);
 
 	lock_acquire(sv->sv_lock);
@@ -177,6 +179,7 @@ sfs_write(struct vnode *v, struct uio *uio)
 	unreserve_buffers(SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
 
+	sfs_trans_commit(sfs, TRANS_WRITE);
 	return result;
 }
 
@@ -403,8 +406,10 @@ int
 sfs_truncate(struct vnode *v, off_t len)
 {
 	struct sfs_vnode *sv = v->vn_data;
+	struct sfs_fs *sfs = v->vn_fs->fs_data;
 	int result;
 
+	sfs_trans_begin(sfs, TRANS_TRUNCATE);
 	lock_acquire(sv->sv_lock);
 	reserve_buffers(SFS_BLOCKSIZE);
 
@@ -412,6 +417,7 @@ sfs_truncate(struct vnode *v, off_t len)
 
 	unreserve_buffers(SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
+	sfs_trans_commit(sfs, TRANS_TRUNCATE);
 	return result;
 }
 
@@ -569,6 +575,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	uint32_t ino;
 	int result;
 
+	sfs_trans_begin(sfs, TRANS_CREAT);
 	lock_acquire(sv->sv_lock);
 	reserve_buffers(SFS_BLOCKSIZE);
 
@@ -634,7 +641,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	(void)mode;
 
 	/* Link it into the directory */
-	result = sfs_dir_link(sv, name, newguy->sv_ino, NULL);
+	result = sfs_dir_link(sv, name, newguy->sv_ino, NULL);	// Journaled. Goes to metaio
 	if (result) {
 		sfs_dinode_unload(newguy);
 		lock_release(newguy->sv_lock);
@@ -645,10 +652,12 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	}
 
 	/* Update the linkcount of the new file */
+	// Journal this!!!
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(newguy->sv_ino, new_dino->sfi_linkcount, new_dino->sfi_linkcount + 1));
 	new_dino->sfi_linkcount++;
 
 	/* and consequently mark it dirty. */
-	sfs_dinode_mark_dirty(newguy);
+	sfs_dinode_mark_dirty(newguy);	// Journaled. Only affected part is linkcount
 
 	*ret = &newguy->sv_absvn;
 
@@ -656,6 +665,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	unreserve_buffers(SFS_BLOCKSIZE);
 	lock_release(newguy->sv_lock);
 	lock_release(sv->sv_lock);
+	sfs_trans_commit(sfs, TRANS_CREAT);
 	return 0;
 }
 
@@ -674,11 +684,15 @@ static
 int
 sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 {
+	struct sfs_fs *sfs = dir->vn_fs->fs_data;
+	// Uh... file and dir should belong to the same filesystem
+	KASSERT(dir->vn_fs->fs_data == file->vn_fs->fs_data);
 	struct sfs_vnode *sv = dir->vn_data;
 	struct sfs_vnode *f = file->vn_data;
 	struct sfs_dinode *inodeptr;
 	int result;
 
+	sfs_trans_begin(sfs, TRANS_LINK);
 	KASSERT(file->vn_fs == dir->vn_fs);
 
 	/* Hard links to directories aren't allowed. */
@@ -713,13 +727,16 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 
 	/* and update the link count, marking the inode dirty */
 	inodeptr = sfs_dinode_map(f);
+	// Journal this!!!
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(f->sv_ino, inodeptr->sfi_linkcount, inodeptr->sfi_linkcount + 1));
 	inodeptr->sfi_linkcount++;
-	sfs_dinode_mark_dirty(f);
+	sfs_dinode_mark_dirty(f);	// Journaled. Linkcount update
 
 	sfs_dinode_unload(f);
 	lock_release(f->sv_lock);
 	lock_release(sv->sv_lock);
 	unreserve_buffers(SFS_BLOCKSIZE);
+	sfs_trans_commit(sfs, TRANS_LINK);
 	return 0;
 }
 
@@ -747,6 +764,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	struct sfs_vnode *newguy;
 
 	(void)mode;
+	sfs_trans_begin(sfs, TRANS_MKDIR);
 
 	lock_acquire(sv->sv_lock);
 	reserve_buffers(SFS_BLOCKSIZE);
@@ -785,6 +803,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 		      sfs->sfs_sb.sb_volname, name, sv->sv_ino);
 	}
 
+	//       V Already journaled
 	result = sfs_makeobj(sfs, SFS_TYPE_DIR, &newguy);
 	if (result) {
 		goto die_simple;
@@ -816,10 +835,12 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
          * remove it.
          */
 
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(newguy->sv_ino, new_inodeptr->sfi_linkcount, new_inodeptr->sfi_linkcount + 2));
 	new_inodeptr->sfi_linkcount += 2;
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(sv->sv_ino, dir_inodeptr->sfi_linkcount, dir_inodeptr->sfi_linkcount + 1));
 	dir_inodeptr->sfi_linkcount++;
-	sfs_dinode_mark_dirty(newguy);
-	sfs_dinode_mark_dirty(sv);
+	sfs_dinode_mark_dirty(newguy);	// Journaled. Linkcount update
+	sfs_dinode_mark_dirty(sv);	// Journaled. Linkcount update
 
 	sfs_dinode_unload(newguy);
 	sfs_dinode_unload(sv);
@@ -830,6 +851,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	unreserve_buffers(SFS_BLOCKSIZE);
 
 	KASSERT(result==0);
+	sfs_trans_commit(sfs, TRANS_MKDIR);
 	return result;
 
 die_uncreate:
@@ -858,12 +880,15 @@ static
 int
 sfs_rmdir(struct vnode *v, const char *name)
 {
+	struct sfs_fs *sfs = v->vn_fs->fs_data;
 	struct sfs_vnode *sv = v->vn_data;
 	struct sfs_vnode *victim;
 	struct sfs_dinode *dir_inodeptr;
 	struct sfs_dinode *victim_inodeptr;
 	int result, result2;
 	int slot;
+
+	sfs_trans_begin(sfs, TRANS_RMDIR);
 
 	/* Cannot remove the . or .. entries from a directory! */
 	if (!strcmp(name, ".") || !strcmp(name, "..")) {
@@ -920,15 +945,19 @@ sfs_rmdir(struct vnode *v, const char *name)
 	KASSERT(dir_inodeptr->sfi_linkcount > 1);
 	KASSERT(victim_inodeptr->sfi_linkcount==2);
 
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(sv->sv_ino, dir_inodeptr->sfi_linkcount, dir_inodeptr->sfi_linkcount - 1));
 	dir_inodeptr->sfi_linkcount--;
-	sfs_dinode_mark_dirty(sv);
+	sfs_dinode_mark_dirty(sv);	// Journaled. Linkcount update
 
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(victim->sv_ino, victim_inodeptr->sfi_linkcount, victim_inodeptr->sfi_linkcount - 2));
 	victim_inodeptr->sfi_linkcount -= 2;
-	sfs_dinode_mark_dirty(victim);
+	sfs_dinode_mark_dirty(victim);	// Journaled. Linkcount update
 
 	result = sfs_itrunc(victim, 0);
 	if (result) {
+		sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(victim->sv_ino, victim_inodeptr->sfi_linkcount, victim_inodeptr->sfi_linkcount + 2));
 		victim_inodeptr->sfi_linkcount += 2;
+		sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(sv->sv_ino, dir_inodeptr->sfi_linkcount, dir_inodeptr->sfi_linkcount + 1));
 		dir_inodeptr->sfi_linkcount++;
 		result2 = sfs_dir_link(sv, name, victim->sv_ino, NULL);
 		if (result2) {
@@ -950,7 +979,26 @@ die_loadsv:
  	unreserve_buffers(SFS_BLOCKSIZE);
  	lock_release(sv->sv_lock);
 
+ 	sfs_trans_commit(sfs, TRANS_RMDIR);
+
 	return result;
+}
+
+static
+void 
+itoa(int n, char s[])
+{
+    int i, sign;
+ 
+    if ((sign = n) < 0)  /* record sign */
+        n = -n;          /* make n positive */
+        i = 0;
+    do {       /* generate digits in reverse order */
+        s[i++] = n % 10 + '0';   /* get next digit */
+    } while ((n /= 10) > 0);     /* delete it */
+    if (sign < 0)
+        s[i++] = '-';
+    s[i] = '\0';
 }
 
 /*
@@ -965,12 +1013,20 @@ static
 int
 sfs_remove(struct vnode *dir, const char *name)
 {
+	struct sfs_fs *sfs = dir->vn_fs->fs_data;
 	struct sfs_vnode *sv = dir->vn_data;
 	struct sfs_vnode *victim;
 	struct sfs_dinode *victim_inodeptr;
 	struct sfs_dinode *dir_inodeptr;
 	int slot;
 	int result;
+	struct sfs_vnode *grave_node;
+	result = sfs_getgraveyard(&sfs->sfs_absfs, &grave_node);
+	if (result) {
+		panic("Gravyard is funcked up");
+	}
+
+	sfs_trans_begin(sfs, TRANS_REMOVE);
 
 	/* need to check this to avoid deadlock even in error condition */
 	if (!strcmp(name, ".") || !strcmp(name, "..")) {
@@ -1001,7 +1057,7 @@ sfs_remove(struct vnode *dir, const char *name)
 	result = sfs_dinode_load(victim);
 	if (result) {
 		lock_release(victim->sv_lock);
-		VOP_DECREF(&victim->sv_absvn);
+		VOP_DECREF(&victim->sv_absvn);	// Is this journalled?
 		goto out_loadsv;
 	}
 	victim_inodeptr = sfs_dinode_map(victim);
@@ -1019,10 +1075,24 @@ sfs_remove(struct vnode *dir, const char *name)
 		goto out_reference;
 	}
 
+	char new_name[60];
+	itoa((int) victim->sv_ino, new_name);
+
+	//TODO: need to get the dir_sv for sure.
+	lock_acquire(grave_node->sv_lock);
+	result = sfs_dir_link(grave_node, new_name, victim->sv_ino, NULL);
+	if (result) {
+		goto out_reference;
+	}
+	lock_release(grave_node->sv_lock);
+
+	// should be in reclaim
 	/* Decrement the link count. */
-	KASSERT(victim_inodeptr->sfi_linkcount > 0);
-	victim_inodeptr->sfi_linkcount--;
-	sfs_dinode_mark_dirty(victim);
+	// KASSERT(victim_inodeptr->sfi_linkcount > 0);
+	// sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(victim->sv_ino, 
+	// 	victim_inodeptr->sfi_linkcount, victim_inodeptr->sfi_linkcount - 1));
+	// victim_inodeptr->sfi_linkcount--;
+	// sfs_dinode_mark_dirty(victim);	// Journaled. Linkcount update
 
 out_reference:
 	/* Discard the reference that sfs_lookonce got us */
@@ -1036,6 +1106,7 @@ out_loadsv:
 out_buffers:
 	lock_release(sv->sv_lock);
 	unreserve_buffers(SFS_BLOCKSIZE);
+	sfs_trans_commit(sfs, TRANS_REMOVE);
 	return result;
 }
 
@@ -1130,6 +1201,8 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	int result, result2;
 	struct sfs_direntry sd;
 	int found_dir1;
+
+	sfs_trans_begin(sfs, TRANS_RENAME);
 
 	/* make gcc happy */
 	obj2_inodeptr = NULL;
@@ -1443,10 +1516,12 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			/* Dispose of the directory */
 			KASSERT(dir2_inodeptr->sfi_linkcount > 1);
 			KASSERT(obj2_inodeptr->sfi_linkcount == 2);
+			sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(dir2->sv_ino, dir2_inodeptr->sfi_linkcount, dir2_inodeptr->sfi_linkcount - 1));
 			dir2_inodeptr->sfi_linkcount--;
+			sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(obj2->sv_ino, obj2_inodeptr->sfi_linkcount, obj2_inodeptr->sfi_linkcount - 2));
 			obj2_inodeptr->sfi_linkcount -= 2;
-			sfs_dinode_mark_dirty(dir2);
-			sfs_dinode_mark_dirty(obj2);
+			sfs_dinode_mark_dirty(dir2);	// Journaled. Linkcount update
+			sfs_dinode_mark_dirty(obj2);	// Journaled. Linkcount update
 
 			/* ignore errors on this */
 			sfs_itrunc(obj2, 0);
@@ -1466,8 +1541,9 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 
 			/* Dispose of the file */
 			KASSERT(obj2_inodeptr->sfi_linkcount > 0);
+			sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(obj2->sv_ino, obj2_inodeptr->sfi_linkcount, obj2_inodeptr->sfi_linkcount - 1));
 			obj2_inodeptr->sfi_linkcount--;
-			sfs_dinode_mark_dirty(obj2);
+			sfs_dinode_mark_dirty(obj2);	// Journaled. Linkcount update
 		}
 
 		sfs_dinode_unload(obj2);
@@ -1493,8 +1569,9 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		goto out4;
 	}
 
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(obj1->sv_ino, obj1_inodeptr->sfi_linkcount, obj1_inodeptr->sfi_linkcount + 1));
 	obj1_inodeptr->sfi_linkcount++;
-	sfs_dinode_mark_dirty(obj1);
+	sfs_dinode_mark_dirty(obj1);	// Journaled. Linkcount update
 
 	if (obj1->sv_type == SFS_TYPE_DIR && dir1 != dir2) {
 		/* Directory: reparent it */
@@ -1515,18 +1592,21 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		if (result) {
 			goto recover1;
 		}
+		sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(dir1->sv_ino, dir1_inodeptr->sfi_linkcount, dir1_inodeptr->sfi_linkcount - 1));
 		dir1_inodeptr->sfi_linkcount--;
-		sfs_dinode_mark_dirty(dir1);
+		sfs_dinode_mark_dirty(dir1);	// Journaled. Linkcount update
+		sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(dir2->sv_ino, dir2_inodeptr->sfi_linkcount, dir2_inodeptr->sfi_linkcount + 1));
 		dir2_inodeptr->sfi_linkcount++;
-		sfs_dinode_mark_dirty(dir2);
+		sfs_dinode_mark_dirty(dir2);	// Journaled. Linkcount update
 	}
 
 	result = sfs_dir_unlink(dir1, slot1);
 	if (result) {
 		goto recover2;
 	}
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(obj1->sv_ino, obj1_inodeptr->sfi_linkcount, obj1_inodeptr->sfi_linkcount - 1));
 	obj1_inodeptr->sfi_linkcount--;
-	sfs_dinode_mark_dirty(obj1);
+	sfs_dinode_mark_dirty(obj1);	// Journaled. Linkcount update
 
 	KASSERT(result==0);
 
@@ -1539,18 +1619,21 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			if (result2) {
 				recovermsg(result, result2);
 			}
+			sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(dir1->sv_ino, dir1_inodeptr->sfi_linkcount, dir1_inodeptr->sfi_linkcount + 1));
 			dir1_inodeptr->sfi_linkcount++;
-			sfs_dinode_mark_dirty(dir1);
+			sfs_dinode_mark_dirty(dir1);	// Journaled. Linkcount update
+			sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(dir2->sv_ino, dir2_inodeptr->sfi_linkcount, dir2_inodeptr->sfi_linkcount - 1));
 			dir2_inodeptr->sfi_linkcount--;
-			sfs_dinode_mark_dirty(dir2);
+			sfs_dinode_mark_dirty(dir2);	// Journaled. Linkcount update
 		}
     recover1:
 		result2 = sfs_dir_unlink(dir2, slot2);
 		if (result2) {
 			recovermsg(result, result2);
 		}
+		sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(obj1->sv_ino, obj1_inodeptr->sfi_linkcount, obj1_inodeptr->sfi_linkcount - 1));
 		obj1_inodeptr->sfi_linkcount--;
-		sfs_dinode_mark_dirty(obj1);
+		sfs_dinode_mark_dirty(obj1);	// Journaled. Linkcount update
 	}
 
  out4:
@@ -1580,6 +1663,8 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	unreserve_buffers(SFS_BLOCKSIZE);
 
 	lock_release(sfs->sfs_renamelock);
+
+	sfs_trans_commit(sfs, TRANS_RENAME);
 
 	return result;
 }

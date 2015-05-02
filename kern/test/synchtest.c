@@ -414,7 +414,7 @@ lkunit1(int nargs, char **args)
 	test_lock = lock_create("test");
 
 	KASSERT(!lock_do_i_hold(test_lock));
-	
+
 	lock_destroy(test_lock);
 	kprintf("Lock unit test 1 done\n");
 
@@ -434,7 +434,7 @@ lkunit2(int nargs, char **args)
 	lock_acquire(test_lock);
 
 	KASSERT(lock_do_i_hold(test_lock));
-	
+
 	lock_release(test_lock);
 	lock_destroy(test_lock);
 	kprintf("Lock unit test 2 done\n");
