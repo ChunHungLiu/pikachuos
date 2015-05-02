@@ -193,6 +193,7 @@ sfs_reclaim(struct vnode *v)
 	int result;
 	int slot;
 	struct sfs_vnode *grave_node;
+	sfs_trans_begin(sfs, TRANS_RECLAIM);
 
 	buffers_needed = !curthread->t_did_reserve_buffers;
 	if (buffers_needed) {
@@ -228,6 +229,7 @@ sfs_reclaim(struct vnode *v)
 		spinlock_release(&v->vn_countlock);
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sv->sv_lock);
+		sfs_trans_commit(sfs, TRANS_RECLAIM);
 		return EBUSY;
 	}
 	spinlock_release(&v->vn_countlock);
@@ -253,6 +255,7 @@ sfs_reclaim(struct vnode *v)
 		if (buffers_needed) {
 			unreserve_buffers(SFS_BLOCKSIZE);
 		}
+		sfs_trans_commit(sfs, TRANS_RECLAIM);
 		return result;
 	}
 	iptr = sfs_dinode_map(sv);
@@ -282,6 +285,7 @@ sfs_reclaim(struct vnode *v)
 			if (buffers_needed) {
 				unreserve_buffers(SFS_BLOCKSIZE);
 			}
+			sfs_trans_commit(sfs, TRANS_RECLAIM);
 			return result;
 		}
 		sfs_dinode_unload(sv);
@@ -321,7 +325,7 @@ sfs_reclaim(struct vnode *v)
 
 	sfs_vnode_destroy(sv);
 
-	// sfs_trans_commit(sfs, TRANS_RECLAIM);
+	sfs_trans_commit(sfs, TRANS_RECLAIM);
 
 	/* Done */
 	return 0;

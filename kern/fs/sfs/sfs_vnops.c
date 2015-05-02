@@ -74,16 +74,6 @@
 /* Slot in a directory that ".." is expected to appear in */
 #define DOTDOTSLOT  1
 
-#define TRANS_WRITE 0
-#define TRANS_TRUNCATE 1
-#define TRANS_CREAT 2
-#define TRANS_LINK 3
-#define TRANS_MKDIR 4
-#define TRANS_RMDIR 5
-#define TRANS_REMOVE 6
-#define TRANS_RENAME 7
-#define TRANS_RECLAIM 8
-
 ////////////////////////////////////////////////////////////
 // Vnode operations.
 
