@@ -634,7 +634,7 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, int type, void* recptr) {
 		case TRANS_BEGIN:
 		case TRANS_COMMIT:
 		default:
-		panic("Invalid record type");
+		panic("Invalid record type (%d)", type);
 	}
 
 	// Save and discard this dinode if the vnode was loaded
@@ -830,6 +830,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 				struct recovery_transaction rec_trans;
 				rec_trans.operations = array_create();
 				rec_trans.committed = false;
+				rec_trans.id = new_trans->id;
 				array_init(rec_trans.operations);
 
 				// Add the newly created transaction to the list of active transactions
@@ -867,7 +868,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 				struct block_alloc_args *jentry = (struct block_alloc_args *)recptr;
 
 				// Mark as potential garbage
-				bitmap_mark(garbage, jentry->disk_addr);
+				if (!bitmap_isset(garbage, jentry->disk_addr))
+					bitmap_mark(garbage, jentry->disk_addr);
 			}
 			break;
 			case BLOCK_WRITE:
@@ -876,10 +878,12 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 				struct block_write_args *jentry = (struct block_write_args *)recptr;
 
 				// Mark as no longer garbage
-				bitmap_unmark(garbage, jentry->written_addr);
+				if (bitmap_isset(garbage, jentry->written_addr))
+					bitmap_unmark(garbage, jentry->written_addr);
 
 				// Mark as untouchable user data
-				bitmap_mark(userdata, jentry->written_addr);
+				if (!bitmap_isset(garbage, jentry->written_addr))
+					bitmap_mark(userdata, jentry->written_addr);
 			}
 			break;
 			case BLOCK_DEALLOC:
@@ -888,10 +892,12 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 				struct block_dealloc_args *jentry = (struct block_dealloc_args *)recptr;
 
 				// Mark as no longer garbage
-				bitmap_unmark(garbage, jentry->disk_addr);
+				if (bitmap_isset(garbage, jentry->disk_addr))
+					bitmap_unmark(garbage, jentry->disk_addr);
 
 				// Mark as no longer untouchable
-				bitmap_unmark(userdata, jentry->disk_addr);
+				if (bitmap_isset(garbage, jentry->disk_addr))
+					bitmap_unmark(userdata, jentry->disk_addr);
 			}
 		}
 
@@ -911,6 +917,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 				// Add this record to the transaction's list of operations
 				if (active_trans->id == id) {
 					num_found++;
+					kprintf("Adding operation type %d to transaction %d at index %d\n", type, id, i);
 					result = array_add(active_trans->operations, recptr, NULL);
 				}
 			}
@@ -923,6 +930,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		if (result)
 			panic("Fuck everything is broken");
 	}
+
+	kprintf("Done reading journal\n");
 
 	// There may still be uncommitted records in the active transactions list.
 	// Mark those as aborted
@@ -937,7 +946,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	// At this point all transactions are in `transaction_list`
 
 	// Destroy the active transactions list
-	array_cleanup(transaction_active);
 	array_destroy(transaction_active);
 
 	// Free up our iterator
@@ -950,17 +958,23 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	// Now iterate through all transactions, and all operations in that transaction
 	num = array_num(transaction_list);
 	for (i = 0; i < num; i++) {
-		rec_trans = array_get (transaction_active, i);
+		kprintf("Processing\n");
+		rec_trans = array_get(transaction_list, i);
 		bool redo = rec_trans->committed;
 		unsigned num_ops = array_num(rec_trans->operations);
 		unsigned j;
 		for (j = 0; j < num_ops; j++) {
 			recptr = array_get(rec_trans->operations, j);
+			kprintf("Recovering operation %d of transaction %d at index %d\n", 
+				j, rec_trans->id, i);
+			panic("asdfasdfa");
 			result = sfs_recover_operation(sfs, redo, type, recptr);
 			if (result)
 				panic("stay calm and debug");
 		}
 	}
+
+	kprintf("Done recovering\n");
 
 	/* Spin up the journal. */
 	SAY("*** Starting up ***\n");
