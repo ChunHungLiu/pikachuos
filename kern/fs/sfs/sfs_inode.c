@@ -191,6 +191,24 @@ sfs_reclaim(struct vnode *v)
 	unsigned ix, i, num;
 	bool buffers_needed;
 	int result;
+	int slot;
+	struct sfs_vnode *grave_node;
+
+	buffers_needed = !curthread->t_did_reserve_buffers;
+	if (buffers_needed) {
+		result = sfs_getgraveyard(&sfs->sfs_absfs, &grave_node);
+		if (result) {
+			panic("Gravyard is fucked up");
+		}
+		reserve_buffers(SFS_BLOCKSIZE);
+	} else {
+		unreserve_buffers(SFS_BLOCKSIZE);
+		result = sfs_getgraveyard(&sfs->sfs_absfs, &grave_node);
+		if (result) {
+			panic("Gravyard is fucked up");
+		}
+		reserve_buffers(SFS_BLOCKSIZE);
+	}
 
 	lock_acquire(sv->sv_lock);
 	lock_acquire(sfs->sfs_vnlock);
@@ -220,10 +238,8 @@ sfs_reclaim(struct vnode *v)
 	 * from inside, so we might or might not be inside another
 	 * operation.
 	 */
-	buffers_needed = !curthread->t_did_reserve_buffers;
-	if (buffers_needed) {
-		reserve_buffers(SFS_BLOCKSIZE);
-	}
+	// sfs_trans_begin(sfs, TRANS_RECLAIM);
+
 
 	/* Get the on-disk inode. */
 	result = sfs_dinode_load(sv);
@@ -241,6 +257,21 @@ sfs_reclaim(struct vnode *v)
 	}
 	iptr = sfs_dinode_map(sv);
 
+	lock_acquire(grave_node->sv_lock);
+	result = sfs_dir_findino(grave_node, sv->sv_ino, NULL, &slot);
+	if (!result) {
+		result = sfs_dir_unlink(grave_node, slot);
+		if (result) {
+			panic("Remove from GY is fucked up");
+		}
+		KASSERT(iptr->sfi_linkcount > 0);
+		sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(sv->sv_ino, 
+			iptr->sfi_linkcount, iptr->sfi_linkcount - 1));
+		iptr->sfi_linkcount--;
+		sfs_dinode_mark_dirty(sv);	// Journaled. Linkcount update
+	}
+	lock_release(grave_node->sv_lock);
+	
 	/* If there are no on-disk references to the file either, erase it. */
 	if (iptr->sfi_linkcount == 0) {
 		result = sfs_itrunc(sv, 0);
@@ -289,6 +320,8 @@ sfs_reclaim(struct vnode *v)
 	lock_release(sv->sv_lock);
 
 	sfs_vnode_destroy(sv);
+
+	// sfs_trans_commit(sfs, TRANS_RECLAIM);
 
 	/* Done */
 	return 0;
@@ -538,5 +571,41 @@ sfs_getroot(struct fs *fs, struct vnode **ret)
 	unreserve_buffers(SFS_BLOCKSIZE);
 
 	*ret = &sv->sv_absvn;
+	return 0;
+}
+
+/*
+ * Get vnode for the graveyard of the filesystem.
+ * The graveyard vnode is always found in block 2 (SFS_GRAVYARD_INO).
+ *
+ * Locking: sfs_loadvnode locks the inode table and returns the
+ * new vnode locked; we just unlock it.
+ */
+int
+sfs_getgraveyard(struct fs *fs, struct sfs_vnode **ret)
+{
+	struct sfs_fs *sfs = fs->fs_data;
+	struct sfs_vnode *sv;
+	int result;
+
+	reserve_buffers(SFS_BLOCKSIZE);
+
+	result = sfs_loadvnode(sfs, SFS_GRAVEYARD_INO, SFS_TYPE_INVAL, &sv);
+	if (result) {
+		kprintf("sfs: getgraveyard: Cannot load root vnode\n");
+		unreserve_buffers(SFS_BLOCKSIZE);
+		return result;
+	}
+
+	if (sv->sv_type != SFS_TYPE_DIR) {
+		kprintf("sfs: getgraveyard: not directory (type %u)\n",
+		      sv->sv_type);
+		unreserve_buffers(SFS_BLOCKSIZE);
+		return EINVAL;
+	}
+
+	unreserve_buffers(SFS_BLOCKSIZE);
+
+	*ret = sv;
 	return 0;
 }

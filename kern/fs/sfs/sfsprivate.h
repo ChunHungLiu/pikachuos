@@ -104,6 +104,7 @@ int sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 		struct sfs_vnode **ret);
 int sfs_makeobj(struct sfs_fs *sfs, int type, struct sfs_vnode **ret);
 int sfs_getroot(struct fs *fs, struct vnode **ret);
+int sfs_getgraveyard(struct fs *fs, struct sfs_vnode **ret);
 
 /* Functions in sfs_io.c */
 int sfs_readblock(struct fs *fs, daddr_t block, void *data, size_t len);

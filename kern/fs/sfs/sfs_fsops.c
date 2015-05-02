@@ -1081,6 +1081,15 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	/* Maybe call more recovery code here */
 	/**************************************/
 
+	// TODO: create the graveyard dir here.
+
+	// const char* path = "graveyard";
+
+	// result = vfs_mkdir((char *)path , 0775);
+	// if (result) {
+	// 	panic("Can't make graveyard");
+	// }
+
 	/* Hand back the abstract fs */
 	*ret = &sfs->sfs_absfs;
 	return 0;

@@ -82,6 +82,7 @@
 #define TRANS_RMDIR 5
 #define TRANS_REMOVE 6
 #define TRANS_RENAME 7
+#define TRANS_RECLAIM 8
 
 ////////////////////////////////////////////////////////////
 // Vnode operations.
@@ -1012,6 +1013,11 @@ sfs_remove(struct vnode *dir, const char *name)
 	struct sfs_dinode *dir_inodeptr;
 	int slot;
 	int result;
+	struct sfs_vnode *grave_node;
+	result = sfs_getgraveyard(&sfs->sfs_absfs, &grave_node);
+	if (result) {
+		panic("Gravyard is funcked up");
+	}
 
 	sfs_trans_begin(sfs, TRANS_REMOVE);
 
@@ -1062,11 +1068,21 @@ sfs_remove(struct vnode *dir, const char *name)
 		goto out_reference;
 	}
 
+	//TODO: need to get the dir_sv for sure.
+	lock_acquire(grave_node->sv_lock);
+	result = sfs_dir_link(grave_node, name, victim->sv_ino, NULL);
+	if (result) {
+		goto out_reference;
+	}
+	lock_release(grave_node->sv_lock);
+
+	// should be in reclaim
 	/* Decrement the link count. */
-	KASSERT(victim_inodeptr->sfi_linkcount > 0);
-	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(victim->sv_ino, victim_inodeptr->sfi_linkcount, victim_inodeptr->sfi_linkcount - 1));
-	victim_inodeptr->sfi_linkcount--;
-	sfs_dinode_mark_dirty(victim);	// Journaled. Linkcount update
+	// KASSERT(victim_inodeptr->sfi_linkcount > 0);
+	// sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_inode_link(victim->sv_ino, 
+	// 	victim_inodeptr->sfi_linkcount, victim_inodeptr->sfi_linkcount - 1));
+	// victim_inodeptr->sfi_linkcount--;
+	// sfs_dinode_mark_dirty(victim);	// Journaled. Linkcount update
 
 out_reference:
 	/* Discard the reference that sfs_lookonce got us */
