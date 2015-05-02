@@ -1046,7 +1046,7 @@ sfs_discard(struct sfs_vnode *sv,
 			sfs_bfree_prelocked(sfs, block);
 			sfs_jphys_write_wrapper(sfs, NULL,
 				jentry_meta_update( sv->sv_ino,	// disk_addr
-									(int*)inodeptr - (int*)&inodeptr->sfi_direct[i],	// offset
+									(char*)&inodeptr->sfi_direct[i] - (char*)inodeptr,	// offset
 									sizeof(int),	// data_len
 									&inodeptr->sfi_direct[i],	// old_data
 									NULL));	// new_data -- all 0ss

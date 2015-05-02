@@ -83,6 +83,9 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 
 int vm_fault(int faulttype, vaddr_t faultaddress)
 {
+    if (faultaddress == 0)
+        panic("NULL pointer exception");
+
     struct pt_entry *pt_entry;
     uint32_t tlbhi, tlblo;
     int spl, perms;

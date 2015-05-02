@@ -203,14 +203,12 @@ struct inode_link_args {
 	uint16_t new_linkcount;
 };
 
-struct meta_update_args {
+struct meta_update_args {	// ignore
 	unsigned code;
 	int id;
 	daddr_t disk_addr;
 	size_t offset_addr;
 	size_t data_len;
-	void *old_data;
-	void *new_data;
 };
 
 struct block_dealloc_args {

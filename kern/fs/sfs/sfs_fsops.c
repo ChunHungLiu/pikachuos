@@ -440,25 +440,25 @@ fail:
 static
 int
 sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
-	struct sfs_vnode *sv = NULL;
-	struct sfs_dinode *dinode = NULL;
 	int result = 0;
 	int type = *((int*)recptr);
 	reserve_buffers(SFS_BLOCKSIZE);
 
+	// data will contain the data for a block on disk. dinode will treat that data as an inode
+	void *data = kmalloc(SFS_BLOCKSIZE);
+	struct sfs_dinode *dinode = (struct sfs_dinode *)data;
+
+	// Go ahead and load the data for changes that will need access to a block
 	if (type == INODE_LINK || type == META_UPDATE || type == RESIZE ||
 		type == INODE_UPDATE_TYPE) {
 		// Load in the vnode and dinode stuff. Disk address is the 3rd member in all of these
-		int daddr = ((int*)recptr)[2];
-		result = sfs_loadvnode(sfs, daddr, SFS_TYPE_INVAL, &sv);
-		if (result)
-			panic("stay calm and debug");
-		lock_acquire(sv->sv_lock);
-		result = sfs_dinode_load(sv);
-		if (result)
-			panic("stay calm and debug");
-		dinode = sfs_dinode_map(sv);
+		int block = ((int*)recptr)[2];
+		result = sfs_readblock(&sfs->sfs_absfs, block, data, SFS_BLOCKSIZE);
 	}
+
+	kprintf("    ");
+	jentry_print(recptr);
+	kprintf("\n");
 
 	// Ugly braces inside each case. But it makes it easier to use the journal entries
 	switch (type) {
@@ -467,9 +467,11 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 			struct block_alloc_args *jentry = (struct block_alloc_args *)recptr;
 			lock_acquire(sfs->sfs_freemaplock);
 			if (redo) {
-				bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
+				if (!bitmap_isset(sfs->sfs_freemap, jentry->disk_addr))
+					bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
 			} else {
-				bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
+				if (bitmap_isset(sfs->sfs_freemap, jentry->disk_addr))
+					bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
 			}
 			lock_release(sfs->sfs_freemaplock);
 		}
@@ -479,9 +481,11 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 			struct block_dealloc_args *jentry = (struct block_dealloc_args *)recptr;
 			lock_acquire(sfs->sfs_freemaplock);
 			if (redo) {
-				bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
+				if (bitmap_isset(sfs->sfs_freemap, jentry->disk_addr))
+					bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
 			} else {
-				bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
+				if (!bitmap_isset(sfs->sfs_freemap, jentry->disk_addr))
+					bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
 			}
 			lock_release(sfs->sfs_freemaplock);
 		}
@@ -502,7 +506,13 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 
 			// Do the change, if necessary
 			if (dinode->sfi_linkcount == old) {
+				// Set the new data
 				dinode->sfi_linkcount = new;
+
+				// Write the entire block to disk
+				result = sfs_writeblock(&sfs->sfs_absfs, jentry->disk_addr, 
+					NULL, data, SFS_BLOCKSIZE);
+
 				rdebug("Setting linkcount of %d from %d to %d\n",
 					jentry->disk_addr, old, new);
 			} else {
@@ -514,42 +524,30 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 		case META_UPDATE:
 		{
 			struct meta_update_args *jentry = (struct meta_update_args *)recptr;
-			void *old;
-			void *new;
-			void *data = kmalloc(jentry->data_len);
+			unsigned char *old;
+			unsigned char *new;
 
-			// Load the dinode
-			result = sfs_loadvnode(sfs, jentry->disk_addr, SFS_TYPE_INVAL, &sv);
-			if (result)
-				panic("stay calm and debug");
-			lock_acquire(sv->sv_lock);
-			result = sfs_dinode_load(sv);
-			if (result)
-				panic("stay calm and debug");
-			dinode = sfs_dinode_map(sv);
-
-			// Read in the current data
-			result = sfs_metaio(sv, jentry->offset_addr, data, jentry->data_len,
-				UIO_READ);
-			if (result)
-				panic("stay calm and debug");
+			unsigned char* old_data = (unsigned char*)jentry + sizeof(*jentry);
+			unsigned char* new_data = old_data + jentry->data_len;
 
 			// Compute the necessary change
 			if (redo) {
-				old = jentry->old_data;
-				new = jentry->new_data;
+				old = old_data;
+				new = new_data;
 			} else {
-				old = jentry->new_data;
-				new = jentry->old_data;
+				old = new_data;
+				new = old_data;
 			}
 
-			(void)old;
-			// No - we should always overwrite XXXIf this is the same as the old data, replace it
+			(void) old;
+			// If this is the same as the old data, replace it
 			//if (memcmp(data, old, jentry->data_len) == 0) {
-				result = sfs_metaio(sv, jentry->offset_addr, new,
-					jentry->data_len, UIO_WRITE);
-				if (result)
-					panic("shoot");
+				// Overwrite a portion with new data
+				memcpy(data + jentry->offset_addr, new, jentry->data_len);
+
+				// Write the entire block to disk
+				result = sfs_writeblock(&sfs->sfs_absfs, jentry->disk_addr, 
+					NULL, data, SFS_BLOCKSIZE);
 			//}
 		}
 		break;
@@ -569,7 +567,13 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 
 			// Do the change, if necessary
 			if (dinode->sfi_size == old) {
+				// Set the new size
 				dinode->sfi_size = new;
+
+				// Write the entire block to disk
+				result = sfs_writeblock(&sfs->sfs_absfs, jentry->inode_addr, 
+					NULL, data, SFS_BLOCKSIZE);
+
 				rdebug("Setting size of %d from %d to %d\n",
 					jentry->inode_addr, old, new);
 			} else {
@@ -581,24 +585,18 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 		case BLOCK_WRITE:
 		{
 			struct block_write_args *jentry = (struct block_write_args *)recptr;
-			void *data = kmalloc(SFS_BLOCKSIZE);
 			unsigned block_checksum;
-
-			// Read block
-			result = sfs_readblock(&sfs->sfs_absfs, jentry->written_addr, data, SFS_BLOCKSIZE);
-			if (result)
-				panic("stay calm and debug");
 
 			// Compute checksum
 			block_checksum = checksum(data);
 
 			// If may be garbage, zero out
-			bool new_alloc = false;
+			bool new_alloc = jentry->new_alloc;
 			if (block_checksum != jentry->new_checksum) {
 				kprintf("  Failed write in block %d detected. Data may be corrupted\n",
 					jentry->written_addr);
 				if (new_alloc) {
-					kprintf("  Block may contain garbage data. Clearning\n");
+					kprintf("  Block was newly allocated and may contain garbage data. Clearning\n");
 					bzero(data, SFS_BLOCKSIZE);
 					result = sfs_writeblock(&sfs->sfs_absfs, jentry->written_addr, NULL, data,
 						SFS_BLOCKSIZE);
@@ -625,7 +623,13 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 
 			// Do the change, if necessary
 			if (dinode->sfi_type == old) {
+				// Update the new type
 				dinode->sfi_type = new;
+
+				// Write the entire block to disk
+				result = sfs_writeblock(&sfs->sfs_absfs, jentry->inode_addr, 
+					NULL, data, SFS_BLOCKSIZE);
+
 				rdebug("Setting type of %d from %d to %d\n",
 					jentry->inode_addr, old, new);
 			} else {
@@ -638,13 +642,6 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 		case TRANS_COMMIT:
 		default:
 		panic("Invalid record type (%d)", type);
-	}
-
-	// Save and discard this dinode if the vnode was loaded
-	if (sv) {
-		sfs_dinode_unload(sv);
-		sfs_dinode_mark_dirty(sv);
-		lock_release(sv->sv_lock);
 	}
 
 	unreserve_buffers(SFS_BLOCKSIZE);
@@ -881,6 +878,10 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 			{
 				// Convenience
 				struct block_write_args *jentry = (struct block_write_args *)recptr;
+
+				// If this was a new alloc, record it as such in the block_write_args
+				if (bitmap_isset(garbage, jentry->written_addr))
+					jentry->new_alloc = true;
 
 				// Mark as no longer garbage
 				if (bitmap_isset(garbage, jentry->written_addr))
