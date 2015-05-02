@@ -26,6 +26,11 @@ sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, const char* 
 sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 		struct sfs_jphys_writecontext *ctx,	void *recptr) {
 
+	if (!sfs_jphys_iswriting(sfs)) {
+		kfree(recptr);
+		return 0;
+	}
+
 	unsigned code = *(int *)recptr;
 	size_t reclen;
 	uint32_t odometer;

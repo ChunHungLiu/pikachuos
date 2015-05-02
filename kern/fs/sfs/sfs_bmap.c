@@ -1124,7 +1124,10 @@ sfs_itrunc(struct sfs_vnode *sv, off_t newlen)
 	/* Lock the freemap for the whole truncate */
 	sfs_lock_freemap(sfs);
 
-	sfs_jphys_write_wrapper(sfs, NULL, jentry_truncate(sv->sv_ino, newblocklen, oldblocklen));
+	sfs_jphys_write_wrapper(sfs, NULL, 
+		jentry_resize(	sv->sv_ino, 
+						newblocklen, 
+						oldblocklen));
 
 	if (newblocklen < oldblocklen) {
 		result = sfs_discard(sv, newblocklen, oldblocklen);

@@ -95,7 +95,8 @@ sfs_balloc(struct sfs_fs *sfs, daddr_t *diskblock, struct buf **bufret)
 		return result;
 	}
 	// We have successfully allocated a block in the freemap. Journal it
-	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, jentry_block_alloc(*diskblock, 0, 0));
+	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, 
+		jentry_block_alloc(*diskblock, 0, 0));
 
 	sfs->sfs_freemapdirty = true;
 

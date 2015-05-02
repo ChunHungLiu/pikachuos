@@ -224,6 +224,7 @@ struct block_write_args {
 	unsigned code;
 	daddr_t written_addr;
 	uint32_t new_checksum;
+	bool new_alloc;
 };
 
 struct inode_update_type_args {

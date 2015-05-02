@@ -247,7 +247,8 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 	}
 
 	new_checksum = checksum(iobuffer);
-	sfs_jphys_write_wrapper(sfs, NULL, jentry_block_write(diskblock, new_checksum));
+	sfs_jphys_write_wrapper(sfs, NULL, 
+		jentry_block_write(diskblock, new_checksum, false));
 
 	/*
 	 * If it was a write, mark the modified block dirty.
@@ -325,7 +326,8 @@ sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
 	}
 
 	new_checksum = checksum(iobuf);
-	sfs_jphys_write_wrapper(sfs, NULL, jentry_block_write(diskblock, new_checksum));
+	sfs_jphys_write_wrapper(sfs, NULL, 
+		jentry_block_write(diskblock, new_checksum, false));
 
 	if (uio->uio_rw == UIO_WRITE) {
 		buffer_mark_valid(iobuf);

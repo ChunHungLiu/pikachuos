@@ -46,6 +46,7 @@
 #include <sfs.h>
 #include "sfsprivate.h"
 
+#define rdebug kprintf
 
 /* Shortcuts for the size macros in kern/sfs.h */
 #define SFS_FS_NBLOCKS(sfs)        ((sfs)->sfs_sb.sb_nblocks)
@@ -582,8 +583,24 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kprintf("We have a record of type %u\n", type);
 		(void) lsn;
 		(void) recptr;
-
+		int err = 0;
 		bool redo = true;
+
+		struct sfs_vnode *sv = NULL;
+		struct sfs_dinode *dinode = NULL;
+		if (type == INODE_LINK || type == META_UPDATE || type == RESIZE ||
+			type == INODE_UPDATE_TYPE) {
+			// Load in the vnode and dinode stuff
+			int daddr = ((int*)recptr)[1];
+			err = sfs_loadvnode(sfs, daddr, SFS_TYPE_INVAL, &sv);
+			if (err) 
+				panic("stay calm and debug");
+			lock_acquire(sv->sv_lock);
+			err = sfs_dinode_load(sv);
+			if (err) 
+				panic("stay calm and debug");
+			dinode = sfs_dinode_map(sv);
+		}
 
 		// Ugly braces inside each case. But it makes it easier to use the journal entries
 		switch (type) {
@@ -599,11 +616,49 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 				lock_release(sfs->sfs_freemaplock);
 			}
 			break;
+			case BLOCK_DEALLOC:
+			{
+				struct block_dealloc_args *jentry = (struct block_dealloc_args *)recptr;
+				lock_acquire(sfs->sfs_freemaplock);
+				if (redo) {
+					bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
+				} else {
+					bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
+				}
+				lock_release(sfs->sfs_freemaplock);
+			}
+			break;
 			case INODE_LINK:
 			{
 				struct inode_link_args *jentry = (struct inode_link_args *)recptr;
-				struct sfs_vnode *sv = NULL;
-				struct sfs_dinode *dinode = NULL;
+				int old, new;
+
+				// Get what the change should be
+				if (redo) {
+					old = jentry->old_linkcount;
+					new = jentry->new_linkcount;
+				} else {
+					old = jentry->new_linkcount;
+					new = jentry->old_linkcount;
+				}
+
+				// Do the change, if necessary
+				if (dinode->sfi_linkcount == old) {
+					dinode->sfi_linkcount = new;
+					rdebug("Setting linkcount of %d from %d to %d\n",
+						jentry->disk_addr, old, new);
+				} else {
+					rdebug("Linkcount of %d is %d; not changing from %d to %d\n",
+						jentry->disk_addr, dinode->sfi_linkcount, old, new);
+				}
+			}
+			break;
+			case META_UPDATE:
+			{
+				struct meta_update_args *jentry = (struct meta_update_args *)recptr;
+				void *old;
+				void *new;
+				void *data = kmalloc(jentry->data_len);
 
 				// Load the dinode
 				err = sfs_loadvnode(sfs, jentry->disk_addr, SFS_TYPE_INVAL, &sv);
@@ -615,59 +670,125 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 					panic("stay calm and debug");
 				dinode = sfs_dinode_map(sv);
 
-				// Get what the change should be
-				int old, new;
+				// Read in the current data
+				err = sfs_metaio(sv, jentry->offset_addr, data, jentry->data_len,
+					UIO_READ);
+				if (err)
+					panic("stay calm and debug");
+
+				// Compute the necessary change
 				if (redo) {
-					old = jentry->old_linkcount;
-					new = jentry->new_linkcount;
+					old = jentry->old_data;
+					new = jentry->new_data;
 				} else {
-					old = jentry->new_linkcount;
-					new = jentry->old_linkcount;
+					old = jentry->new_data;
+					new = jentry->old_data;
+				}
+
+				(void)old;
+				// No - we should always overwrite XXXIf this is the same as the old data, replace it
+				//if (memcmp(data, old, jentry->data_len) == 0) {
+					err = sfs_metaio(sv, jentry->offset_addr, new, 
+						jentry->data_len, UIO_WRITE);
+					if (err)
+						panic("shoot");
+				//}
+			}
+			break;
+			case RESIZE:
+			{
+				struct resize_args *jentry = (struct resize_args *)recptr;
+				size_t old, new;
+
+				// Get what the change should be
+				if (redo) {
+					old = jentry->old_size;
+					new = jentry->new_size;
+				} else {
+					old = jentry->new_size;
+					new = jentry->old_size;
 				}
 
 				// Do the change, if necessary
-				if (dinode->linkcount == old) {
-					dinode->linkcount = new;
-					rdebug("Setting linkcount of %d from %d to %d\n",
-						jentry->disk_addr, old, new);
+				if (dinode->sfi_size == old) {
+					dinode->sfi_size = new;
+					rdebug("Setting size of %d from %d to %d\n",
+						jentry->inode_addr, old, new);
 				} else {
-					rdebug("Linkcount of %d is %d; not changing from %d to %d\n",
-						jentry->disk_addr, dinode->linkcount, old, new);
+					rdebug("size of %d is %d; not changing from %d to %d\n",
+						jentry->inode_addr, dinode->sfi_size, old, new);
 				}
-
-				// Discard this dinode
-				sfs_dinode_unload(sv);
-				lock_release(sv->sv_lock);
 			}
-			break;
-			case META_UPDATE:
-			{
-				struct block_alloc_args *jentry = (struct block_alloc_args *)recptr;
-				lock_acquire(sfs->sfs_freemaplock);
-				if (redo) {
-					bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
-				} else {
-					bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
-				}
-				lock_release(sfs->sfs_freemaplock);
-			}
-			break;
-			case BLOCK_DEALLOC:
-			break;
-			case TRUNCATE:
 			break;
 			case BLOCK_WRITE:
+			{
+				struct block_write_args *jentry = (struct block_write_args *)recptr;
+				void *data = kmalloc(SFS_BLOCKSIZE);
+				unsigned block_checksum;
+
+				// Read block
+				err = sfs_readblock(&sfs->sfs_absfs, jentry->written_addr, data, SFS_BLOCKSIZE);
+				if (err)
+					panic("stay calm and debug");
+
+				// Compute checksum
+				block_checksum = checksum(data);
+
+				// If may be garbage, zero out
+				bool new_alloc = false;
+				if (block_checksum != jentry->new_checksum) {
+					kprintf("  Failed write in block %d detected. Data may be corrupted\n",
+						jentry->written_addr);
+					if (new_alloc) {
+						kprintf("  Block may contain garbage data. Clearning\n");
+						bzero(data, SFS_BLOCKSIZE);
+						err = sfs_writeblock(&sfs->sfs_absfs, jentry->written_addr, NULL, data,
+							SFS_BLOCKSIZE);
+						if (err)
+							panic("stay calm and debug");
+					}
+				}
+
+			}
 			break;
 			case INODE_UPDATE_TYPE:
+			{
+				struct inode_update_type_args *jentry = (struct inode_update_type_args *)recptr;
+				int old, new;
+
+				// Get what the change should be
+				if (redo) {
+					old = jentry->old_type;
+					new = jentry->new_type;
+				} else {
+					old = jentry->new_type;
+					new = jentry->old_type;
+				}
+
+				// Do the change, if necessary
+				if (dinode->sfi_type == old) {
+					dinode->sfi_type = new;
+					rdebug("Setting type of %d from %d to %d\n",
+						jentry->inode_addr, old, new);
+				} else {
+					rdebug("type of %d is %d; not changing from %d to %d\n",
+						jentry->inode_addr, dinode->sfi_type, old, new);
+				}
+			}
 			break;
 			case TRANS_BEGIN:
 			break;
 			case TRANS_COMMIT:
 			break;
-			case RESIZE:
-			break;
 			default:
 			panic("Unknown record type");
+		}
+
+		// Save and discard this dinode if the vnode was loaded
+		if (sv) {
+			sfs_dinode_unload(sv);
+			sfs_dinode_mark_dirty(sv);
+			lock_release(sv->sv_lock);
 		}
 
 		result = sfs_jiter_next(sfs, ji);
