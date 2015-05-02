@@ -583,47 +583,91 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		(void) lsn;
 		(void) recptr;
 
+		bool redo = true;
+
+		// Ugly braces inside each case. But it makes it easier to use the journal entries
 		switch (type) {
-/* Autogenerate cases: sfs_jentries.py */
-		case TRUNCATE:
-			reclen = sizeof(struct truncate_args);
-			kprintf("TRUNCATE(code=%d, inode_addr=%d, start_block=%d, end_block=%d)",
-				((struct truncate_args*)recptr)->code,
-				((struct truncate_args*)recptr)->inode_addr,
-				((struct truncate_args*)recptr)->start_block,
-				((struct truncate_args*)recptr)->end_block);
+			case BLOCK_ALLOC:
+			{
+				struct block_alloc_args *jentry = (struct block_alloc_args *)recptr;
+				lock_acquire(sfs->sfs_freemaplock);
+				if (redo) {
+					bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
+				} else {
+					bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
+				}
+				lock_release(sfs->sfs_freemaplock);
+			}
 			break;
-		case BLOCK_ALLOC:
-			reclen = sizeof(struct block_alloc_args);
-			kprintf("BLOCK_ALLOC(code=%d, disk_addr=%d, ref_addr=%d, offset_addr=%d)",
-				((struct block_alloc_args*)recptr)->code,
-				((struct block_alloc_args*)recptr)->disk_addr,
-				((struct block_alloc_args*)recptr)->ref_addr,
-				((struct block_alloc_args*)recptr)->offset_addr);
+			case INODE_LINK:
+			{
+				struct inode_link_args *jentry = (struct inode_link_args *)recptr;
+				struct sfs_vnode *sv = NULL;
+				struct sfs_dinode *dinode = NULL;
+
+				// Load the dinode
+				err = sfs_loadvnode(sfs, jentry->disk_addr, SFS_TYPE_INVAL, &sv);
+				if (err) 
+					panic("stay calm and debug");
+				lock_acquire(sv->sv_lock);
+				err = sfs_dinode_load(sv);
+				if (err) 
+					panic("stay calm and debug");
+				dinode = sfs_dinode_map(sv);
+
+				// Get what the change should be
+				int old, new;
+				if (redo) {
+					old = jentry->old_linkcount;
+					new = jentry->new_linkcount;
+				} else {
+					old = jentry->new_linkcount;
+					new = jentry->old_linkcount;
+				}
+
+				// Do the change, if necessary
+				if (dinode->linkcount == old) {
+					dinode->linkcount = new;
+					rdebug("Setting linkcount of %d from %d to %d\n",
+						jentry->disk_addr, old, new);
+				} else {
+					rdebug("Linkcount of %d is %d; not changing from %d to %d\n",
+						jentry->disk_addr, dinode->linkcount, old, new);
+				}
+
+				// Discard this dinode
+				sfs_dinode_unload(sv);
+				lock_release(sv->sv_lock);
+			}
 			break;
-		case META_UPDATE:
-			reclen = sizeof(struct meta_update_args);
-			kprintf("META_UPDATE(code=%d, disk_addr=%d, offset_addr=%d, old_data=%p, new_data=%p)",
-				((struct meta_update_args*)recptr)->code,
-				((struct meta_update_args*)recptr)->disk_addr,
-				((struct meta_update_args*)recptr)->offset_addr,
-				((struct meta_update_args*)recptr)->old_data,
-				((struct meta_update_args*)recptr)->new_data);
+			case META_UPDATE:
+			{
+				struct block_alloc_args *jentry = (struct block_alloc_args *)recptr;
+				lock_acquire(sfs->sfs_freemaplock);
+				if (redo) {
+					bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
+				} else {
+					bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
+				}
+				lock_release(sfs->sfs_freemaplock);
+			}
 			break;
-		case INODE_LINK:
-			reclen = sizeof(struct inode_link_args);
-			kprintf("INODE_LINK(code=%d, disk_addr=%d, old_linkcount=%d, new_linkcount=%d)",
-				((struct inode_link_args*)recptr)->code,
-				((struct inode_link_args*)recptr)->disk_addr,
-				((struct inode_link_args*)recptr)->old_linkcount,
-				((struct inode_link_args*)recptr)->new_linkcount);
+			case BLOCK_DEALLOC:
 			break;
-		case BLOCK_DEALLOC:
-			reclen = sizeof(struct block_dealloc_args);
-			kprintf("BLOCK_DEALLOC(code=%d, disk_addr=%d)",
-				((struct block_dealloc_args*)recptr)->code,
-				((struct block_dealloc_args*)recptr)->disk_addr);
+			case TRUNCATE:
 			break;
+			case BLOCK_WRITE:
+			break;
+			case INODE_UPDATE_TYPE:
+			break;
+			case TRANS_BEGIN:
+			break;
+			case TRANS_COMMIT:
+			break;
+			case RESIZE:
+			break;
+			default:
+			panic("Unknown record type");
 		}
 
 		result = sfs_jiter_next(sfs, ji);
