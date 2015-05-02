@@ -173,7 +173,7 @@ void *jentry_trans_begin(int trans_type, int id);
 void *jentry_inode_update_type(daddr_t inode_addr, int old_type, int new_type);
 void *jentry_block_write(daddr_t written_addr, uint32_t new_checksum, bool new_alloc);
 void *jentry_resize(daddr_t inode_addr, size_t old_size, size_t new_size);
-uint32_t checksum(struct buf *input);
+uint32_t checksum(unsigned char *data);
 
 #define sfs_jphys_write_wrapper(args...) sfs_jphys_write_wrapper_debug(__FILE__, __LINE__, __FUNCTION__, args)
 

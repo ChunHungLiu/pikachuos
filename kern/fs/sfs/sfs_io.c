@@ -194,7 +194,7 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 {
 	struct sfs_fs *sfs = sv->sv_absvn.vn_fs->fs_data;
 	struct buf *iobuffer;
-	char *ioptr;
+	unsigned char *ioptr;
 	daddr_t diskblock;
 	uint32_t fileblock;
 	int result;
@@ -246,14 +246,15 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 		return result;
 	}
 
-	new_checksum = checksum(iobuffer);
-	sfs_jphys_write_wrapper(sfs, NULL, 
-		jentry_block_write(diskblock, new_checksum, false));
-
 	/*
-	 * If it was a write, mark the modified block dirty.
+	 * If it was a write, mark the modified block dirty and journal
 	 */
 	if (uio->uio_rw == UIO_WRITE) {
+		// Compute checksum and journal
+		new_checksum = checksum(ioptr);
+		sfs_jphys_write_wrapper(sfs, NULL, 
+			jentry_block_write(diskblock, new_checksum, false));
+
 		buffer_mark_dirty(iobuffer);	// Journalled
 	}
 
@@ -325,11 +326,10 @@ sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
 		return result;
 	}
 
-	new_checksum = checksum(iobuf);
-	sfs_jphys_write_wrapper(sfs, NULL, 
-		jentry_block_write(diskblock, new_checksum, false));
-
 	if (uio->uio_rw == UIO_WRITE) {
+		new_checksum = checksum(ioptr);
+		sfs_jphys_write_wrapper(sfs, NULL, 
+			jentry_block_write(diskblock, new_checksum, false));
 		buffer_mark_valid(iobuf);
 		buffer_mark_dirty(iobuf);	// Journalled
 	}
@@ -533,15 +533,6 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 		return result;
 	}
 
-	// Journal this!!!
-	ioptr = buffer_map(iobuf);
-	void *old_data = ioptr + blockoffset;
-	sfs_jphys_write_wrapper(sfs, /*context*/ NULL, 
-		jentry_meta_update(	diskblock, 
-							blockoffset, 
-							len,
-							old_data, 
-							data));
 
 	ioptr = buffer_map(iobuf);
 	if (rw == UIO_READ) {
@@ -549,6 +540,16 @@ sfs_metaio(struct sfs_vnode *sv, off_t actualpos, void *data, size_t len,
 		memcpy(data, ioptr + blockoffset, len);
 	}
 	else {
+		// Journal this!!!
+		ioptr = buffer_map(iobuf);
+		void *old_data = ioptr + blockoffset;
+		sfs_jphys_write_wrapper(sfs, /*context*/ NULL, 
+			jentry_meta_update(	diskblock, 
+								blockoffset, 
+								len,
+								old_data, 
+								data));
+
 		/* Update the selected region */
 		memcpy(ioptr + blockoffset, data, len);
 		buffer_mark_dirty(iobuf);	// Journalled (meta_update)

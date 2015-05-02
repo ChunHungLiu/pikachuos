@@ -575,7 +575,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 
 	result = sfs_jiter_fwdcreate(sfs, &ji);
 	if (result)
-		panic("Fuck everything is broken");
+		panic("Fuck everything is broken");	
 	while (!sfs_jiter_done(ji)) {
 		type = sfs_jiter_type(ji);
 		lsn = sfs_jiter_lsn(ji);
