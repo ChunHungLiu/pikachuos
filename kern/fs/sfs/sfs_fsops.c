@@ -292,10 +292,37 @@ int
 sfs_unmount(struct fs *fs)
 {
 	struct sfs_fs *sfs = fs->fs_data;
+	struct sfs_vnode *grave_node;
+	int result;
+	unsigned ix, i, num;
 
+	result = sfs_getgraveyard(&sfs->sfs_absfs, &grave_node);
+	if (result) {
+		panic("Gravyard is fucked up");
+	}
 
+	lock_acquire(grave_node->sv_lock);
 	lock_acquire(sfs->sfs_vnlock);
 	lock_acquire(sfs->sfs_freemaplock);
+
+	num = vnodearray_num(sfs->sfs_vnodes);
+	ix = num;
+	for (i=0; i<num; i++) {
+		struct vnode *v2 = vnodearray_get(sfs->sfs_vnodes, i);
+		struct sfs_vnode *sv2 = v2->vn_data;
+		if (sv2 == grave_node) {
+			ix = i;
+			break;
+		}
+	}
+	if (ix == num) {
+		panic("unmount: graveyard vnode not in vnode pool, hmmm\n");
+	}
+	vnodearray_remove(sfs->sfs_vnodes, ix);
+
+	lock_release(grave_node->sv_lock);
+	lock_destroy(grave_node->sv_lock);
+	kfree(grave_node);
 
 	/* Do we have any files open? If so, can't unmount. */
 	if (vnodearray_num(sfs->sfs_vnodes) > 0) {
