@@ -4,6 +4,8 @@
 #include <synch.h>
 #include <buf.h>
 #include <sfs.h>
+#include <current.h>
+#include <proc.h>
 #include "sfsprivate.h"
 
 #define MOD_ADLER 65521
@@ -29,6 +31,7 @@ sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, const char* 
 		struct sfs_fs *sfs, struct sfs_jphys_writecontext *ctx, void *rec) {
 
 	if (!sfs_jphys_iswriting(sfs)) {
+		kprintf("Not writing\n");
 		kfree(rec);
 		return 0;
 	}

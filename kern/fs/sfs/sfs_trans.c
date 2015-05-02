@@ -17,7 +17,7 @@ int sfs_trans_begin(struct sfs_fs* sfs, int trans_type) {
 
 	struct trans* new_trans = kmalloc(sizeof(struct trans));
 
-	cur_lsn = sfs_jphys_write_wrapper(sfs, NULL, jentry_trans_begin(trans_type, curproc->pid));
+	cur_lsn = sfs_jphys_write_wrapper(sfs, NULL, jentry_trans_begin(trans_type));
 	new_trans->id = curproc->pid;
 	new_trans->first_lsn = cur_lsn;
 
@@ -48,7 +48,7 @@ int sfs_trans_commit(struct sfs_fs* sfs, int trans_type) {
 	}
 	lock_release(sfs->trans_lock);
 
-	sfs_jphys_write_wrapper(sfs, NULL, jentry_trans_commit(trans_type, curproc->pid));
+	sfs_jphys_write_wrapper(sfs, NULL, jentry_trans_commit(trans_type));
 	return 0;
 }
 

@@ -437,6 +437,216 @@ fail:
 	return NULL;
 }
 
+static
+int
+sfs_recover_operation(struct sfs_fs *sfs, bool redo, int type, void* recptr) {
+	struct sfs_vnode *sv = NULL;
+	struct sfs_dinode *dinode = NULL;
+	int result = 0;
+	if (type == INODE_LINK || type == META_UPDATE || type == RESIZE ||
+		type == INODE_UPDATE_TYPE) {
+		// Load in the vnode and dinode stuff. Disk address is the 3rd member in all of these
+		int daddr = ((int*)recptr)[2];
+		result = sfs_loadvnode(sfs, daddr, SFS_TYPE_INVAL, &sv);
+		if (result)
+			panic("stay calm and debug");
+		lock_acquire(sv->sv_lock);
+		result = sfs_dinode_load(sv);
+		if (result)
+			panic("stay calm and debug");
+		dinode = sfs_dinode_map(sv);
+	}
+
+	// Ugly braces inside each case. But it makes it easier to use the journal entries
+	switch (type) {
+		case BLOCK_ALLOC:
+		{
+			struct block_alloc_args *jentry = (struct block_alloc_args *)recptr;
+			lock_acquire(sfs->sfs_freemaplock);
+			if (redo) {
+				bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
+			} else {
+				bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
+			}
+			lock_release(sfs->sfs_freemaplock);
+		}
+		break;
+		case BLOCK_DEALLOC:
+		{
+			struct block_dealloc_args *jentry = (struct block_dealloc_args *)recptr;
+			lock_acquire(sfs->sfs_freemaplock);
+			if (redo) {
+				bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
+			} else {
+				bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
+			}
+			lock_release(sfs->sfs_freemaplock);
+		}
+		break;
+		case INODE_LINK:
+		{
+			struct inode_link_args *jentry = (struct inode_link_args *)recptr;
+			int old, new;
+
+			// Get what the change should be
+			if (redo) {
+				old = jentry->old_linkcount;
+				new = jentry->new_linkcount;
+			} else {
+				old = jentry->new_linkcount;
+				new = jentry->old_linkcount;
+			}
+
+			// Do the change, if necessary
+			if (dinode->sfi_linkcount == old) {
+				dinode->sfi_linkcount = new;
+				rdebug("Setting linkcount of %d from %d to %d\n",
+					jentry->disk_addr, old, new);
+			} else {
+				rdebug("Linkcount of %d is %d; not changing from %d to %d\n",
+					jentry->disk_addr, dinode->sfi_linkcount, old, new);
+			}
+		}
+		break;
+		case META_UPDATE:
+		{
+			struct meta_update_args *jentry = (struct meta_update_args *)recptr;
+			void *old;
+			void *new;
+			void *data = kmalloc(jentry->data_len);
+
+			// Load the dinode
+			result = sfs_loadvnode(sfs, jentry->disk_addr, SFS_TYPE_INVAL, &sv);
+			if (result)
+				panic("stay calm and debug");
+			lock_acquire(sv->sv_lock);
+			result = sfs_dinode_load(sv);
+			if (result)
+				panic("stay calm and debug");
+			dinode = sfs_dinode_map(sv);
+
+			// Read in the current data
+			result = sfs_metaio(sv, jentry->offset_addr, data, jentry->data_len,
+				UIO_READ);
+			if (result)
+				panic("stay calm and debug");
+
+			// Compute the necessary change
+			if (redo) {
+				old = jentry->old_data;
+				new = jentry->new_data;
+			} else {
+				old = jentry->new_data;
+				new = jentry->old_data;
+			}
+
+			(void)old;
+			// No - we should always overwrite XXXIf this is the same as the old data, replace it
+			//if (memcmp(data, old, jentry->data_len) == 0) {
+				result = sfs_metaio(sv, jentry->offset_addr, new,
+					jentry->data_len, UIO_WRITE);
+				if (result)
+					panic("shoot");
+			//}
+		}
+		break;
+		case RESIZE:
+		{
+			struct resize_args *jentry = (struct resize_args *)recptr;
+			size_t old, new;
+
+			// Get what the change should be
+			if (redo) {
+				old = jentry->old_size;
+				new = jentry->new_size;
+			} else {
+				old = jentry->new_size;
+				new = jentry->old_size;
+			}
+
+			// Do the change, if necessary
+			if (dinode->sfi_size == old) {
+				dinode->sfi_size = new;
+				rdebug("Setting size of %d from %d to %d\n",
+					jentry->inode_addr, old, new);
+			} else {
+				rdebug("size of %d is %d; not changing from %d to %d\n",
+					jentry->inode_addr, dinode->sfi_size, old, new);
+			}
+		}
+		break;
+		case BLOCK_WRITE:
+		{
+			struct block_write_args *jentry = (struct block_write_args *)recptr;
+			void *data = kmalloc(SFS_BLOCKSIZE);
+			unsigned block_checksum;
+
+			// Read block
+			result = sfs_readblock(&sfs->sfs_absfs, jentry->written_addr, data, SFS_BLOCKSIZE);
+			if (result)
+				panic("stay calm and debug");
+
+			// Compute checksum
+			block_checksum = checksum(data);
+
+			// If may be garbage, zero out
+			bool new_alloc = false;
+			if (block_checksum != jentry->new_checksum) {
+				kprintf("  Failed write in block %d detected. Data may be corrupted\n",
+					jentry->written_addr);
+				if (new_alloc) {
+					kprintf("  Block may contain garbage data. Clearning\n");
+					bzero(data, SFS_BLOCKSIZE);
+					result = sfs_writeblock(&sfs->sfs_absfs, jentry->written_addr, NULL, data,
+						SFS_BLOCKSIZE);
+					if (result)
+						panic("stay calm and debug");
+				}
+			}
+
+		}
+		break;
+		case INODE_UPDATE_TYPE:
+		{
+			struct inode_update_type_args *jentry = (struct inode_update_type_args *)recptr;
+			int old, new;
+
+			// Get what the change should be
+			if (redo) {
+				old = jentry->old_type;
+				new = jentry->new_type;
+			} else {
+				old = jentry->new_type;
+				new = jentry->old_type;
+			}
+
+			// Do the change, if necessary
+			if (dinode->sfi_type == old) {
+				dinode->sfi_type = new;
+				rdebug("Setting type of %d from %d to %d\n",
+					jentry->inode_addr, old, new);
+			} else {
+				rdebug("type of %d is %d; not changing from %d to %d\n",
+					jentry->inode_addr, dinode->sfi_type, old, new);
+			}
+		}
+		break;
+		case TRANS_BEGIN:
+		case TRANS_COMMIT:
+		default:
+		panic("Invalid record type");
+	}
+
+	// Save and discard this dinode if the vnode was loaded
+	if (sv) {
+		sfs_dinode_unload(sv);
+		sfs_dinode_mark_dirty(sv);
+		lock_release(sv->sv_lock);
+	}
+
+	return 0;
+}
+
 /*
  * Mount routine.
  *
@@ -568,238 +778,189 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 
 	struct sfs_jiter *ji;
 	unsigned type;
-	sfs_lsn_t lsn;
 	void *recptr;
 	size_t reclen;
 	reserve_buffers(SFS_BLOCKSIZE);
 
+	// Iterate through the journal once to
+	// 1) Build transaction objects
+	// 2) Find untouchable user data
+	// 3) Find alloc-write pairs (potential garbage)
+	unsigned num, i;
+	struct bitmap *userdata = bitmap_create(SFS_FS_NBLOCKS(sfs));
+	struct bitmap *garbage  = bitmap_create(SFS_FS_NBLOCKS(sfs));
+
+	// All newly seen transactions will go into the `transaction_active` list
+	//  first. When we see a `TRANS_COMMIT`, we move it into the
+	//  `transaction_list`. If we see a `TRANS_BEGIN` with the same id as an
+	//  active transaction, we treat the active transaction as aborted, and we
+	//  move the aborted transaction into `transaction_list` with `committed`
+	//  set to `false`
+	struct array *transaction_list = array_create();
+	struct array *transaction_active = array_create();
+	array_init(transaction_list);
+	// Iterate
 	result = sfs_jiter_fwdcreate(sfs, &ji);
 	if (result)
-		panic("Fuck everything is broken");	
+		panic("Fuck everything is broken");
 	while (!sfs_jiter_done(ji)) {
 		type = sfs_jiter_type(ji);
-		lsn = sfs_jiter_lsn(ji);
 		recptr = sfs_jiter_rec(ji, &reclen);
 		kprintf("We have a record of type %u\n", type);
-		(void) lsn;
-		(void) recptr;
-		int err = 0;
-		bool redo = true;
-
-		struct sfs_vnode *sv = NULL;
-		struct sfs_dinode *dinode = NULL;
-		if (type == INODE_LINK || type == META_UPDATE || type == RESIZE ||
-			type == INODE_UPDATE_TYPE) {
-			// Load in the vnode and dinode stuff
-			int daddr = ((int*)recptr)[1];
-			err = sfs_loadvnode(sfs, daddr, SFS_TYPE_INVAL, &sv);
-			if (err) 
-				panic("stay calm and debug");
-			lock_acquire(sv->sv_lock);
-			err = sfs_dinode_load(sv);
-			if (err) 
-				panic("stay calm and debug");
-			dinode = sfs_dinode_map(sv);
-		}
-
-		// Ugly braces inside each case. But it makes it easier to use the journal entries
 		switch (type) {
+			case TRANS_BEGIN:
+			{
+				// Convenience
+				struct recovery_transaction *old_trans;
+				struct trans_begin_args *new_trans = (struct trans_begin_args *)recptr;
+
+				// Iterate through the active transactions and check if there's one with the same id
+				num = array_num(transaction_active);
+				for (i = 0; i < num; i++) {
+					old_trans = array_get(transaction_active, i);
+					// If `old_trans` was not committed, treat it as aborted
+					if (old_trans->id == new_trans->id) {
+						array_remove(transaction_active, i);
+						old_trans->committed = false;
+						result = array_add(transaction_list, old_trans, NULL);
+					}
+				}
+
+				// Create the transaction record
+				struct recovery_transaction rec_trans;
+				rec_trans.operations = array_create();
+				rec_trans.committed = false;
+				array_init(rec_trans.operations);
+
+				// Add the newly created transaction to the list of active transactions
+				result = array_add(transaction_active, &rec_trans, NULL);
+			}
+			break;
+			case TRANS_COMMIT:
+			{
+				// Convenience
+				struct recovery_transaction *active_trans;
+				struct trans_commit_args *commit_record = (struct trans_commit_args *)recptr;
+
+				// Iterate through the active transactions and find the one that was just committed
+				num = array_num(transaction_active);
+				int num_found = 0;
+				for (i = 0; i < num; i++) {
+					active_trans = array_get(transaction_active, i);
+					// Add the committed one to the list of completed transactions
+					if (active_trans->id == commit_record->id) {
+						num_found++;
+						array_remove(transaction_active, i);
+						active_trans->committed = true;
+						result = array_add(transaction_list, active_trans, NULL);
+					}
+				}
+
+				// There should not be more than one active transaction with the same id
+				// There should be at least one active transaction, otherwise the commit should not have been logged
+				KASSERT(num_found == 1);
+			}
+			break;
 			case BLOCK_ALLOC:
 			{
+				// Convenience
 				struct block_alloc_args *jentry = (struct block_alloc_args *)recptr;
-				lock_acquire(sfs->sfs_freemaplock);
-				if (redo) {
-					bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
-				} else {
-					bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
-				}
-				lock_release(sfs->sfs_freemaplock);
-			}
-			break;
-			case BLOCK_DEALLOC:
-			{
-				struct block_dealloc_args *jentry = (struct block_dealloc_args *)recptr;
-				lock_acquire(sfs->sfs_freemaplock);
-				if (redo) {
-					bitmap_unmark(sfs->sfs_freemap, jentry->disk_addr);
-				} else {
-					bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
-				}
-				lock_release(sfs->sfs_freemaplock);
-			}
-			break;
-			case INODE_LINK:
-			{
-				struct inode_link_args *jentry = (struct inode_link_args *)recptr;
-				int old, new;
 
-				// Get what the change should be
-				if (redo) {
-					old = jentry->old_linkcount;
-					new = jentry->new_linkcount;
-				} else {
-					old = jentry->new_linkcount;
-					new = jentry->old_linkcount;
-				}
-
-				// Do the change, if necessary
-				if (dinode->sfi_linkcount == old) {
-					dinode->sfi_linkcount = new;
-					rdebug("Setting linkcount of %d from %d to %d\n",
-						jentry->disk_addr, old, new);
-				} else {
-					rdebug("Linkcount of %d is %d; not changing from %d to %d\n",
-						jentry->disk_addr, dinode->sfi_linkcount, old, new);
-				}
-			}
-			break;
-			case META_UPDATE:
-			{
-				struct meta_update_args *jentry = (struct meta_update_args *)recptr;
-				void *old;
-				void *new;
-				void *data = kmalloc(jentry->data_len);
-
-				// Load the dinode
-				err = sfs_loadvnode(sfs, jentry->disk_addr, SFS_TYPE_INVAL, &sv);
-				if (err) 
-					panic("stay calm and debug");
-				lock_acquire(sv->sv_lock);
-				err = sfs_dinode_load(sv);
-				if (err) 
-					panic("stay calm and debug");
-				dinode = sfs_dinode_map(sv);
-
-				// Read in the current data
-				err = sfs_metaio(sv, jentry->offset_addr, data, jentry->data_len,
-					UIO_READ);
-				if (err)
-					panic("stay calm and debug");
-
-				// Compute the necessary change
-				if (redo) {
-					old = jentry->old_data;
-					new = jentry->new_data;
-				} else {
-					old = jentry->new_data;
-					new = jentry->old_data;
-				}
-
-				(void)old;
-				// No - we should always overwrite XXXIf this is the same as the old data, replace it
-				//if (memcmp(data, old, jentry->data_len) == 0) {
-					err = sfs_metaio(sv, jentry->offset_addr, new, 
-						jentry->data_len, UIO_WRITE);
-					if (err)
-						panic("shoot");
-				//}
-			}
-			break;
-			case RESIZE:
-			{
-				struct resize_args *jentry = (struct resize_args *)recptr;
-				size_t old, new;
-
-				// Get what the change should be
-				if (redo) {
-					old = jentry->old_size;
-					new = jentry->new_size;
-				} else {
-					old = jentry->new_size;
-					new = jentry->old_size;
-				}
-
-				// Do the change, if necessary
-				if (dinode->sfi_size == old) {
-					dinode->sfi_size = new;
-					rdebug("Setting size of %d from %d to %d\n",
-						jentry->inode_addr, old, new);
-				} else {
-					rdebug("size of %d is %d; not changing from %d to %d\n",
-						jentry->inode_addr, dinode->sfi_size, old, new);
-				}
+				// Mark as potential garbage
+				bitmap_mark(garbage, jentry->disk_addr);
 			}
 			break;
 			case BLOCK_WRITE:
 			{
+				// Convenience
 				struct block_write_args *jentry = (struct block_write_args *)recptr;
-				void *data = kmalloc(SFS_BLOCKSIZE);
-				unsigned block_checksum;
 
-				// Read block
-				err = sfs_readblock(&sfs->sfs_absfs, jentry->written_addr, data, SFS_BLOCKSIZE);
-				if (err)
-					panic("stay calm and debug");
+				// Mark as no longer garbage
+				bitmap_unmark(garbage, jentry->written_addr);
 
-				// Compute checksum
-				block_checksum = checksum(data);
-
-				// If may be garbage, zero out
-				bool new_alloc = false;
-				if (block_checksum != jentry->new_checksum) {
-					kprintf("  Failed write in block %d detected. Data may be corrupted\n",
-						jentry->written_addr);
-					if (new_alloc) {
-						kprintf("  Block may contain garbage data. Clearning\n");
-						bzero(data, SFS_BLOCKSIZE);
-						err = sfs_writeblock(&sfs->sfs_absfs, jentry->written_addr, NULL, data,
-							SFS_BLOCKSIZE);
-						if (err)
-							panic("stay calm and debug");
-					}
-				}
-
+				// Mark as untouchable user data
+				bitmap_mark(userdata, jentry->written_addr);
 			}
 			break;
-			case INODE_UPDATE_TYPE:
+			case BLOCK_DEALLOC:
 			{
-				struct inode_update_type_args *jentry = (struct inode_update_type_args *)recptr;
-				int old, new;
+				// Convenience
+				struct block_dealloc_args *jentry = (struct block_dealloc_args *)recptr;
 
-				// Get what the change should be
-				if (redo) {
-					old = jentry->old_type;
-					new = jentry->new_type;
-				} else {
-					old = jentry->new_type;
-					new = jentry->old_type;
-				}
+				// Mark as no longer garbage
+				bitmap_unmark(garbage, jentry->disk_addr);
 
-				// Do the change, if necessary
-				if (dinode->sfi_type == old) {
-					dinode->sfi_type = new;
-					rdebug("Setting type of %d from %d to %d\n",
-						jentry->inode_addr, old, new);
-				} else {
-					rdebug("type of %d is %d; not changing from %d to %d\n",
-						jentry->inode_addr, dinode->sfi_type, old, new);
+				// Mark as no longer untouchable
+				bitmap_unmark(userdata, jentry->disk_addr);
+			}
+		}
+
+		// Add all log records to it transaction's list of operations
+		if (type != TRANS_COMMIT && type != TRANS_BEGIN) {
+			// All log records have their transaction id as the second member
+			int id = ((int*)recptr)[1];
+
+			// Convenience
+			struct recovery_transaction *active_trans;
+
+			// Iterate through the active transactions and find the one that this record belongs to
+			num = array_num(transaction_active);
+			int num_found = 0;
+			for (i = 0; i < num; i++) {
+				active_trans = array_get(transaction_active, i);
+				// Add this record to the transaction's list of operations
+				if (active_trans->id == id) {
+					num_found++;
+					result = array_add(active_trans->operations, recptr, NULL);
 				}
 			}
-			break;
-			case TRANS_BEGIN:
-			break;
-			case TRANS_COMMIT:
-			break;
-			default:
-			panic("Unknown record type");
+
+			KASSERT(num_found == 1);
 		}
 
-		// Save and discard this dinode if the vnode was loaded
-		if (sv) {
-			sfs_dinode_unload(sv);
-			sfs_dinode_mark_dirty(sv);
-			lock_release(sv->sv_lock);
-		}
-
+		// Advance to the next journal entry
 		result = sfs_jiter_next(sfs, ji);
-		if (result) 
+		if (result)
 			panic("Fuck everything is broken");
 	}
+
+	// There may still be uncommitted records in the active transactions list.
+	// Mark those as aborted
+	num = array_num(transaction_active);
+	struct recovery_transaction *rec_trans;
+	for (i = 0; i < num; i++) {
+		rec_trans = array_get(transaction_active, i);
+		rec_trans->committed = false;
+		result = array_add(transaction_list, rec_trans, NULL);
+	}
+
+	// At this point all transactions are in `transaction_list`
+
+	// Destroy the active transactions list
+	array_cleanup(transaction_active);
+	array_destroy(transaction_active);
+
+	// Free up our iterator
 	sfs_jiter_destroy(ji);
 	unreserve_buffers(SFS_BLOCKSIZE);
 
 	/* Done with container-level scanning */
 	sfs_jphys_stopreading(sfs);
+
+	// Now iterate through all transactions, and all operations in that transaction
+	num = array_num(transaction_list);
+	for (i = 0; i < num; i++) {
+		rec_trans = array_get (transaction_active, i);
+		bool redo = rec_trans->committed;
+		unsigned num_ops = array_num(rec_trans->operations);
+		unsigned j;
+		for (j = 0; j < num_ops; j++) {
+			recptr = array_get(rec_trans->operations, j);
+			result = sfs_recover_operation(sfs, redo, type, recptr);
+			if (result)
+				panic("stay calm and debug");
+		}
+	}
 
 	/* Spin up the journal. */
 	SAY("*** Starting up ***\n");
