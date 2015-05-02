@@ -439,10 +439,13 @@ fail:
 
 static
 int
-sfs_recover_operation(struct sfs_fs *sfs, bool redo, int type, void* recptr) {
+sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 	struct sfs_vnode *sv = NULL;
 	struct sfs_dinode *dinode = NULL;
 	int result = 0;
+	int type = *((int*)recptr);
+	reserve_buffers(SFS_BLOCKSIZE);
+
 	if (type == INODE_LINK || type == META_UPDATE || type == RESIZE ||
 		type == INODE_UPDATE_TYPE) {
 		// Load in the vnode and dinode stuff. Disk address is the 3rd member in all of these
@@ -643,6 +646,8 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, int type, void* recptr) {
 		sfs_dinode_mark_dirty(sv);
 		lock_release(sv->sv_lock);
 	}
+
+	unreserve_buffers(SFS_BLOCKSIZE);
 
 	return 0;
 }
@@ -967,8 +972,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 			recptr = array_get(rec_trans->operations, j);
 			kprintf("Recovering operation %d of transaction %d at index %d\n", 
 				j, rec_trans->id, i);
-			panic("asdfasdfa");
-			result = sfs_recover_operation(sfs, redo, type, recptr);
+			result = sfs_recover_operation(sfs, redo, recptr);
 			if (result)
 				panic("stay calm and debug");
 		}
