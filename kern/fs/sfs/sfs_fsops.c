@@ -1083,18 +1083,49 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		return result;
 	}
 
+	// Trim after initial recovery
+	sfs_jphys_trim(sfs, sfs_jphys_peeknextlsn(sfs));
+
 	/**************************************/
 	/* Maybe call more recovery code here */
 	/**************************************/
 
-	// TODO: create the graveyard dir here.
+	// TODO: recovery from graveyard here.
 
-	// const char* path = "graveyard";
+	struct sfs_direntry tsd;
+	int nentries;
+	// int i, result;
+	struct sfs_vnode *grave_node;
+	struct sfs_vnode *ptr;
 
-	// result = vfs_mkdir((char *)path , 0775);
-	// if (result) {
-	// 	panic("Can't make graveyard");
-	// }
+	result = sfs_getgraveyard(&sfs->sfs_absfs, &grave_node);
+	if (result) {
+		panic("Graveyard is fucked up");
+	}
+	reserve_buffers(SFS_BLOCKSIZE);
+	lock_acquire(grave_node->sv_lock);
+
+	result = sfs_dir_nentries(grave_node, &nentries);
+	if (result) {
+		return result;
+	}
+
+	/* For each slot... */
+	for (i=0; i<(unsigned)nentries; i++) {
+
+		/* Read the entry from that slot */
+		result = sfs_readdir(grave_node, i, &tsd);
+		if (result) {
+			panic("Error in Gravyard recovery");
+		}
+		sfs_loadvnode(sfs, tsd.sfd_ino, SFS_TYPE_INVAL, &ptr);
+		lock_release(grave_node->sv_lock);
+		sfs_reclaim(&ptr->sv_absvn);
+		lock_acquire(grave_node->sv_lock);
+	}
+	unreserve_buffers(SFS_BLOCKSIZE);
+	lock_release(grave_node->sv_lock);
+
 	// Done!!! Yay!!! Nothing is broken!!! 
 	sfs_jphys_trim(sfs, sfs_jphys_peeknextlsn(sfs));
 
