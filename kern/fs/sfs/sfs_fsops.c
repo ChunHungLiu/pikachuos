@@ -962,6 +962,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 						num_found++;
 						array_remove(transaction_active, i);
 						active_trans->committed = true;
+						break;
 					}
 				}
 
@@ -1148,10 +1149,12 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		if (result) {
 			panic("Error in Gravyard recovery");
 		}
-		sfs_loadvnode(sfs, tsd.sfd_ino, SFS_TYPE_INVAL, &ptr);
-		lock_release(grave_node->sv_lock);
-		sfs_reclaim(&ptr->sv_absvn);
-		lock_acquire(grave_node->sv_lock);
+		if (tsd.sfd_ino != SFS_NOINO) {
+			sfs_loadvnode(sfs, tsd.sfd_ino, SFS_TYPE_INVAL, &ptr);
+			lock_release(grave_node->sv_lock);
+			sfs_reclaim(&ptr->sv_absvn);
+			lock_acquire(grave_node->sv_lock);
+		}
 	}
 	unreserve_buffers(SFS_BLOCKSIZE);
 	lock_release(grave_node->sv_lock);
