@@ -459,6 +459,7 @@ int
 sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 	int result = 0;
 	int type = *((int*)recptr);
+	const char *operation[] = {"Undo", "Redo"};
 
 	// data will contain the data for a block on disk. dinode will treat that data as an inode
 	void *data = kmalloc(SFS_BLOCKSIZE);
@@ -473,7 +474,7 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 	}
 	kprintf("We have a recovery record of type: %d", type);
 
-	kprintf("    ");
+	kprintf("    %s: ", operation[redo]);
 	jentry_print(recptr);
 	kprintf("\n");
 
@@ -604,12 +605,18 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 			struct block_write_args *jentry = (struct block_write_args *)recptr;
 			unsigned block_checksum;
 
+			kprintf("  Data looks like:");
+			for (int b = 0; b < 8; b++)
+				kprintf(" %02x", (unsigned char)((unsigned char*)data)[b]);
+			kprintf("\n");
+
 			// Compute checksum
 			block_checksum = checksum(data);
 
 			// If may be garbage, zero out
 			bool new_alloc = jentry->new_alloc;
 			if (block_checksum != jentry->new_checksum) {
+				kprintf("  Checksum: got %d instead of %d\n", block_checksum, jentry->new_checksum);
 				kprintf("  Failed write in block %d detected. Data may be corrupted\n",
 					jentry->written_addr);
 				if (new_alloc) {
