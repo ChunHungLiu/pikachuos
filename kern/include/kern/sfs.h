@@ -239,6 +239,7 @@ struct block_write_args {
 	daddr_t written_addr;
 	uint32_t new_checksum;
 	bool new_alloc;
+	bool last_write;	// ignore
 };
 
 struct inode_update_type_args {
