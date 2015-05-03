@@ -37,7 +37,7 @@ sfs_lsn_t sfs_jphys_write_wrapper_debug(const char* file, int line, const char* 
 	}
 
 	sfs_lsn_t ret = sfs_jphys_write_wrapper(sfs, ctx, rec);
-	kprintf(" %s:%d:%s\n", file, line, func);
+	kprintf(" at %s:%d:%s\n", file, line, func);
 	return ret;
 }
 
@@ -48,6 +48,8 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	size_t reclen;
 	uint32_t odometer;
 	sfs_lsn_t lsn;
+	struct buf *recbuf;
+	int block;
 
 	if (!sfs_jphys_iswriting(sfs)) {
 		kprintf("Not writing\n");
@@ -55,11 +57,6 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 		return 0;
 	}
 
-	// do checkpoint here.
-	odometer = sfs_jphys_getodometer(sfs->sfs_jphys);
-	if (odometer > 1) {
-		sfs_checkpoint(sfs);
-	}
 	// Debugging
 	kprintf("jentry: ");
 	jentry_print(recptr);
@@ -73,10 +70,38 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 /* Autogenerate: cases */
 	}
 
+	kprintf(" reclen: %d, ", reclen);
 	if (ctx == NULL){
 		lsn = sfs_jphys_write(sfs, /*callback*/ NULL, ctx, code, recptr, reclen);
 	} else {
 		lsn = sfs_jphys_write(sfs, sfs_trans_callback, ctx, code, recptr, reclen);
+	}
+	kprintf("lsn: %lld", lsn);
+
+	// If the journal entry is for something that modified a buffer, 
+	//  update that buffer's metadata to refer to this journal entry
+	if (code != BLOCK_DEALLOC && code != TRANS_BEGIN && code != TRANS_COMMIT) {
+		block = ((int*)recptr)[2];
+		recbuf = buffer_find(&sfs->sfs_absfs, (daddr_t)block);
+		KASSERT(recbuf != NULL);
+
+		// get the old data, and update the oldest_lsn field only if it's the 
+		// first operation that modifies it
+		struct b_fsdata *buf_metadata;
+		buf_metadata = (struct b_fsdata *)buffer_get_fsdata(recbuf);
+		if (buf_metadata->oldest_lsn == 0) {
+			buf_metadata->oldest_lsn = lsn;
+		}
+		if (buf_metadata->newest_lsn < lsn) {
+			buf_metadata->newest_lsn = lsn;
+		}
+		buffer_set_fsdata(recbuf, (void*)buf_metadata);
+	}
+	
+	// do checkpoint here.
+	odometer = sfs_jphys_getodometer(sfs->sfs_jphys);
+	if (odometer > 1) {
+		sfs_checkpoint(sfs);
 	}
 
 	kfree(recptr);

@@ -126,12 +126,12 @@ sfs_writeblock(struct fs *fs, daddr_t block, void *fsbufdata,
 	struct uio ku;
 	bool isjournal;
 	int result;
-
-	(void)fsbufdata;
+	struct b_fsdata* b_fsdata = (struct b_fsdata*)fsbufdata;
 
 	KASSERT(len == SFS_BLOCKSIZE);
 
 	isjournal = sfs_block_is_journal(sfs, block);
+	//kprintf("Writeblock metadata: %p\n", fsbufdata);
 
 	if (isjournal) {
 		/*
@@ -152,10 +152,20 @@ sfs_writeblock(struct fs *fs, daddr_t block, void *fsbufdata,
 		 * Instead, we use special-case logic in the journal
 		 * code for this situation.
 		 */
+		//kprintf("Writing journal blocks\n");
 		result = sfs_jphys_flushforjournalblock(sfs, block);
 		if (result) {
 			return result;
 		}
+	} else if (b_fsdata != NULL) {
+		// This is a standard non-journal block
+		// Enforce write-ahead logging. Flush up to the most recent lsn to touch
+		//  this buffer
+		KASSERT(b_fsdata->newest_lsn != 0);
+		kprintf("FLUSH (daddr %d): lsn %lld", b_fsdata->diskblock, b_fsdata->newest_lsn);
+		sfs_jphys_flush(sfs, b_fsdata->newest_lsn);
+		kprintf("...Done.\n");
+		b_fsdata->newest_lsn = 0;
 	}
 
 	SFSUIO(&iov, &ku, data, block, UIO_WRITE);

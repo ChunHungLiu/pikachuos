@@ -215,6 +215,7 @@ sfs_attachbuf(struct fs *fs, daddr_t diskblock, struct buf *buf)
 	newdata->sfs = sfs;
 	newdata->diskblock = diskblock;
 	newdata->oldest_lsn = 0;
+	newdata->newest_lsn = 0;
 
 	olddata = buffer_set_fsdata(buf, (void*)newdata);
 	KASSERT(olddata == NULL);

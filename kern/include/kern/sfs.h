@@ -121,6 +121,7 @@ struct b_fsdata {
 	struct sfs_fs *sfs;
 	daddr_t diskblock;
 	uint64_t oldest_lsn;
+	uint64_t newest_lsn;
 };
 
 /*
