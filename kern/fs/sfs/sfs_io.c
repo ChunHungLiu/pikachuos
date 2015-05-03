@@ -158,14 +158,16 @@ sfs_writeblock(struct fs *fs, daddr_t block, void *fsbufdata,
 			return result;
 		}
 	} else if (b_fsdata != NULL) {
+		kprintf("\n\nBuffer %p is being written", b_fsdata->buf); 
 		// This is a standard non-journal block
 		// Enforce write-ahead logging. Flush up to the most recent lsn to touch
 		//  this buffer
 		KASSERT(b_fsdata->newest_lsn != 0);
 		kprintf("FLUSH (daddr %d): lsn %lld", b_fsdata->diskblock, b_fsdata->newest_lsn);
 		sfs_jphys_flush(sfs, b_fsdata->newest_lsn);
-		kprintf("...Done.\n");
+		kprintf("...Done.\n\n");
 		b_fsdata->newest_lsn = 0;
+		b_fsdata->oldest_lsn = 0;
 	}
 
 	SFSUIO(&iov, &ku, data, block, UIO_WRITE);

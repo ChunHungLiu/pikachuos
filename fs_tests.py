@@ -5,16 +5,30 @@ import signal
 import sys
 import os
 from termcolor import colored
+
+BAD_TEXT = ["panic", "assert"]
+
+def bad(line):
+	return any([term in line.lower() for term in BAD_TEXT])
  
 def run(command, print_start="unmatchable", print_end="unmatchable"):
-	print colored(command, "red", attrs=["bold"])
+	print colored("Running " + command, "green", attrs=["bold"])
 	result = subprocess.Popen(command.split(" "), 
 		stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 	do_print = False
+	bad_print = False
 	for line in result.stderr:
+		if bad(line):
+			bad_print = True
+		if bad_print:
+			print colored(line[:-1], "black", "on_red")
 		if "warn" in line.lower():
 			print colored(line[:-1], "yellow", attrs=["bold"])
 	for line in result.stdout:
+		if bad(line):
+			bad_print = True
+		if bad_print:
+			print colored(line[:-1], "black", "on_red")
 		if "warn" in line.lower():
 			print colored(line[:-1], "yellow", attrs=["bold"])
 			continue
@@ -27,7 +41,7 @@ def run(command, print_start="unmatchable", print_end="unmatchable"):
 
 def frack(params):
 	print "Testing: %s" % params
-	for doom in xrange(1,2):
+	for doom in xrange(1,5):
 		run('hostbin/host-mksfs LHD1.img test')
 
 		run('sys161 -D %d kernel mount sfs lhd1:; cd lhd1:;'
