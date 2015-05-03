@@ -7,13 +7,16 @@ import os
 from termcolor import colored
  
 def run(command):
-	print colored(command, "red")
+	print colored(command, "red", attrs=["bold"])
 	result = subprocess.Popen(command.split(" "), 
 		stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 	do_print = False
+	for line in result.stderr:
+		if "warn" in line.lower():
+			print colored(line[:-1], "yellow", attrs=["bold"])
 	for line in result.stdout:
 		if "warn" in line.lower():
-			print colored(line[:-1], "yellow")
+			print colored(line[:-1], "yellow", attrs=["bold"])
 			continue
 		if "OS/161 kernel: p /testbin/frack check" in line:
 			do_print = True
