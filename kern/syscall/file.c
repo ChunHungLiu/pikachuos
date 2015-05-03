@@ -39,7 +39,7 @@ struct file_obj* file_obj_create(struct vnode *vn, int flags) {
 		return NULL;
 	}
 
-	return file;	
+	return file;
 }
 
 int console_open(int flags, int *retval) {
@@ -129,7 +129,7 @@ int filetable_add(struct file_obj *file_ptr, int *retval) {
 // TODO: should we model the interface on as_copy?
 int filetable_copy(struct filetable *dest_ft) {
 	struct filetable *curft = curproc->p_filetable;
-	
+
 	for (int fd = 0; fd < OPEN_MAX; fd ++) {
 		if (curft->filetable_files[fd] != NULL){
 			lock_acquire(curft->filetable_files[fd]->file_lock);
@@ -147,7 +147,7 @@ int filetable_remove(int fd) {
 	// TODO: better sync?
 	// TODO: sanity check
 	lock_acquire(curproc->p_filetable->filetable_lock);
-	
+
 	struct file_obj *file_ptr = curproc->p_filetable->filetable_files[fd];
 	vfs_close(file_ptr->file_node);
 	lock_destroy(file_ptr->file_lock);

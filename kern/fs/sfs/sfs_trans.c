@@ -14,7 +14,7 @@ int sfs_trans_begin(struct sfs_fs* sfs, int trans_type) {
 	// create trans, add it to table
 	sfs_jphys_write_wrapper(sfs, 
 		(struct sfs_jphys_writecontext *)0xdeadbeef, jentry_trans_begin(trans_type));
-	
+
 	return 0;
 }
 void sfs_trans_callback(struct sfs_fs *sfs, sfs_lsn_t newlsn,

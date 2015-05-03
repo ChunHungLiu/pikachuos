@@ -52,7 +52,7 @@ as_create(void)
 	for (int i = 0; i < PT_LEVEL_SIZE; i++)
 		as->pt_locks[i] = NULL;
 	as->pagetable = pagetable_create();
-	
+
 	KASSERT(as->pt_locks);
 	KASSERT(as->pagetable);
 
@@ -122,7 +122,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 					if (old_entry->in_memory){
 						// Write it to disk if it's in memory
 						retval = bs_write_page((void *) PADDR_TO_KVADDR(old_entry->p_addr), offset);
-						KASSERT(retval == 0);					
+						KASSERT(retval == 0);
 					} else {
 						// Or copy it to the new disk spot if not
 						retval = bs_read_page(buffer, old_entry->store_index);
@@ -147,7 +147,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	*ret = newas;
 
 	return 0;
-	
+
 	err0:
 	for (i=0; i < (int)region_len; i++){
 		new_region = (struct region *)array_get(newas->as_regions,i);
@@ -265,7 +265,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	region->permission = readable + writeable + executable;
 
 	cm_mem_change(-sz);
-	
+
 	err = array_add(as->as_regions, region, NULL);
 	if (err)
 		return err;

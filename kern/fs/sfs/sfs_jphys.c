@@ -693,7 +693,7 @@ sfs_jphys_flushall(struct sfs_fs *sfs)
 	if (result) {
 		return result;
 	}
-	
+
 	return 0;
 }
 

@@ -92,7 +92,7 @@ pong(void *p, unsigned long which)
 			n++;
 			kprintf("Pong! (%ld) hit number %d\n", which, n);
 			hit_count++;
-		}			
+		}
 		V(print_lock);
 	}
 	V(thread_lock);
@@ -112,7 +112,7 @@ pingpong(int nargs, char **args)
 	/* Creating print_lock. */
 	print_lock = sem_create("print lock", 1);
 	thread_lock = sem_create("thread lock", NTHREADS);
-	
+
 	/* Fork off NTHREADS/2 ping thread and one pong thread. */
 	for (i = 0; i < NTHREADS / 2; i++ ) {
 
