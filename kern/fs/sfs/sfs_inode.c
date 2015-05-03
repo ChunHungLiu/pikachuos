@@ -386,7 +386,7 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 
 	/*
 	 * Choose the function table based on the object type,
-	 * and cache the type in the vnode.
+	 * and cache the type in the vnode. copyinstr strcpy
 	 */
 	switch (dino->sfi_type) {
 	    case SFS_TYPE_FILE:
