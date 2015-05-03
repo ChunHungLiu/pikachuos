@@ -1,43 +1,47 @@
 #!/usr/bin/python
 
 import subprocess
-
+import signal
+import sys
+from termcolor import colored
+ 
 def run(command):
-	print command
+	print colored(command, 'red')
 	subprocess.call(command.split(' '))
 
 def frack(params):
 	print "Testing: %s" % params
 	for doom in xrange(20):
-		run('sys161 -D %d kernel "mount sfs lhd1:; cd lhd1:;'
-			'p /testbin/frack do %s; q"' % (doom, params))
-		run('sys161 kernel "mount sfs lhd1:; cd lhd1:;'
-			'p /testbin/frack check %s; q"' % (params))
+		run('hostbin/host-mksfs LHD1.img test')
+		run('sys161 -D %d kernel mount sfs lhd1:; cd lhd1:;'
+			'p /testbin/frack do %s; q' % (doom, params))
+		run('sys161 kernel mount sfs lhd1:; cd lhd1:;'
+			'p /testbin/frack check %s; q' % (params))
 
 def test(command):
 	pass
 
 def main():
-	size = 1024 * 50
+	size = "small"
 	seed = 1337
 
 	# More tests go here
 
 	# Frack tests
-	frack("createwrite %d" % size)
-	frack("rewrite %d" % size)
-	frack("randupdate %d" % size)
-	frack("truncwrite %d" % size)
-	frack("makehole %d" % size)
-	frack("fillhole %d" % size)
-	frack("truncfill %d" % size)
-	frack("append %d" % size)
-	frack("trunczero %d" % size)
-	frack("trunconeblock %d" % size)
-	frack("truncsmallersize %d" % size)
-	frack("trunclargersize %d" % size)
-	frack("appendandtrunczero %d" % size)
-	frack("appendandtruncpartly %d" % size)
+	frack("createwrite %s" % size)
+	frack("rewrite %s" % size)
+	frack("randupdate %s" % size)
+	frack("truncwrite %s" % size)
+	frack("makehole %s" % size)
+	frack("fillhole %s" % size)
+	frack("truncfill %s" % size)
+	frack("append %s" % size)
+	frack("trunczero %s" % size)
+	frack("trunconeblock %s" % size)
+	frack("truncsmallersize %s" % size)
+	frack("trunclargersize %s" % size)
+	frack("appendandtrunczero %s" % size)
+	frack("appendandtruncpartly %s" % size)
 	frack("mkfile")
 	frack("mkdir")
 	frack("mkmanyfile")
@@ -82,5 +86,11 @@ def main():
 	frack("diropseq %d" % seed)
 	frack("genseq %d" % seed)
 
+def signal_term_handler(signal, frame):
+    print 'got SIGTERM'
+    sys.exit(0)
+ 
+signal.signal(signal.SIGTERM, signal_term_handler)
 if __name__ == "__main__":
 	main()
+

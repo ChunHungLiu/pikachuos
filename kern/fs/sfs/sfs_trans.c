@@ -75,6 +75,8 @@ int sfs_checkpoint(struct sfs_fs* sfs) {
 	len = array_num(dirty_buffers);
 	for (i = 0; i < len; i++) {
 		buffer_ptr = array_get(dirty_buffers, i);
+		if (buffer_ptr == NULL)
+			continue;
 		data_ptr = (struct b_fsdata *)buffer_get_fsdata(buffer_ptr);
 		if (data_ptr->oldest_lsn < oldest_lsn)
 			oldest_lsn = data_ptr->oldest_lsn;

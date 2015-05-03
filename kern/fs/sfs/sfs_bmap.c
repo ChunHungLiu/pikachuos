@@ -331,25 +331,25 @@ sfs_blockobj_set(struct sfs_blockobj *bo, uint32_t offset, uint32_t newval)
 			KASSERT(indirnum < SFS_NDIRECT);
 			oldval = dino->sfi_direct[indirnum];
 			dino->sfi_direct[indirnum] = newval;
-			offset = (int*)dino - (int*)&dino->sfi_direct[indirnum];	// Hacky stuff 'cause I don't want to make journal entries for all this
-			break;
+			offset = (char*)&dino->sfi_direct[indirnum] - (char*)dino;	// Hacky stuff 'cause I don't want to make journal entries for all this
+			break; 
 		    case 1:
 			KASSERT(indirnum == 0);
 			oldval = dino->sfi_indirect;
 			dino->sfi_indirect = newval;
-			offset = (int*)dino - (int*)&dino->sfi_indirect;	// Hacky stuff 'cause I don't want to make journal entries for all this
+			offset = (char*)&dino->sfi_indirect - (char*)dino;	// Hacky stuff 'cause I don't want to make journal entries for all this
 			break;
 		    case 2:
 			KASSERT(indirnum == 0);
 			oldval = dino->sfi_dindirect;
 			dino->sfi_dindirect = newval;
-			offset = (int*)dino - (int*)&dino->sfi_dindirect;	// Hacky stuff 'cause I don't want to make journal entries for all this
+			offset = (char*)&dino->sfi_dindirect - (char*)dino;	// Hacky stuff 'cause I don't want to make journal entries for all this
 			break;
 		    case 3:
 			KASSERT(indirnum == 0);
 			oldval = dino->sfi_tindirect;
 			dino->sfi_tindirect = newval;
-			offset = (int*)dino - (int*)&dino->sfi_tindirect;	// Hacky stuff 'cause I don't want to make journal entries for all this
+			offset = (char*)&dino->sfi_tindirect - (char*)dino;	// Hacky stuff 'cause I don't want to make journal entries for all this
 			break;
 		    default:
 			panic("sfs_blockobj_get: invalid indirection %u\n",

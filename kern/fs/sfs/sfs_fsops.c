@@ -972,6 +972,9 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		}
 	}
 	// Destroy the active transactions list
+	while (array_num(transaction_active)) {
+		array_remove(transaction_active, 0);
+	}
 	array_destroy(transaction_active);
 
 	// Free up our iterator
