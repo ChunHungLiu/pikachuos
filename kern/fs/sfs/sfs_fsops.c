@@ -901,7 +901,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 					bitmap_unmark(garbage, jentry->written_addr);
 
 				// Mark as untouchable user data
-				if (!bitmap_isset(garbage, jentry->written_addr))
+				if (!bitmap_isset(userdata, jentry->written_addr))
 					bitmap_mark(userdata, jentry->written_addr);
 			}
 			break;
@@ -915,7 +915,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 					bitmap_unmark(garbage, jentry->disk_addr);
 
 				// Mark as no longer untouchable
-				if (bitmap_isset(garbage, jentry->disk_addr))
+				if (bitmap_isset(userdata, jentry->disk_addr))
 					bitmap_unmark(userdata, jentry->disk_addr);
 			}
 		}
