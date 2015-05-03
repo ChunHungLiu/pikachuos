@@ -1266,17 +1266,21 @@ sfs_jiter_doprev(struct sfs_fs *sfs, struct sfs_jiter *ji)
 {
 	int result;
 
-	do {
+	while (1) {
 		result = sfs_jiter_one_prev(sfs, ji);
 		if (result) {
 			return result;
+		}
+
+		if (ji->ji_seeall || ji->ji_class != SFS_JPHYS_CONTAINER) {
+			break;
 		}
 
 		if (sfs_jposition_eq(&ji->ji_pos, &ji->ji_tailpos)) {
 			ji->ji_done = true;
 			return 0;
 		}
-	} while (!ji->ji_seeall && ji->ji_class == SFS_JPHYS_CONTAINER);
+	}
 	return 0;
 }
 
@@ -1306,6 +1310,18 @@ sfs_jiter_seekhead(struct sfs_fs *sfs, struct sfs_jiter *ji)
 
 	ji->ji_pos = ji->ji_headpos;
 
+	/* We are no longer done. */
+	ji->ji_done = false;
+
+	/* And we haven't read yet. */
+	ji->ji_read = false;
+
+	/* And release any buffer. */
+	if (ji->ji_buf != NULL) {
+		buffer_release(ji->ji_buf);
+		ji->ji_buf = NULL;
+	}
+
 	/*
 	 * Back up one, using the internal interface that lets us move
 	 * across the head/tail boundary. This also reads the record,
@@ -1329,6 +1345,18 @@ sfs_jiter_seektail(struct sfs_fs *sfs, struct sfs_jiter *ji)
 	int result;
 
 	ji->ji_pos = ji->ji_tailpos;
+
+	/* We are no longer done. */
+	ji->ji_done = false;
+
+	/* And we haven't read yet. */
+	ji->ji_read = false;
+
+	/* And release any buffer. */
+	if (ji->ji_buf != NULL) {
+		buffer_release(ji->ji_buf);
+		ji->ji_buf = NULL;
+	}
 
 	/* We don't need to advance, so just read the record. */
 	result = sfs_jiter_read(sfs, ji);
@@ -1487,7 +1515,6 @@ sfs_scan_for_head(struct sfs_fs *sfs,
 		    ji->ji_pos.jp_blockoffset, thislsn,
 		    class == SFS_JPHYS_CONTAINER ? "container" : "client",
 		    type, sfs_jphys_recname(class, type));
-		UNSAID(class);
 
 		if (first && thislsn != 0) {
 			firstlsn = thislsn;
@@ -1511,7 +1538,7 @@ sfs_scan_for_head(struct sfs_fs *sfs,
 			return 0;
 		}
 
-		if (type == SFS_JPHYS_TRIM) {
+		if (class == SFS_JPHYS_CONTAINER && type == SFS_JPHYS_TRIM) {
 			if (reclen != sizeof(jt)) {
 				kprintf("sfs: %s: wrong size trim "
 					"record, block %u offset %u\n",
@@ -1619,9 +1646,8 @@ sfs_scan_for_trim(struct sfs_fs *sfs,
 		    class == SFS_JPHYS_CONTAINER ? "container" : "client",
 		    type, sfs_jphys_recname(class, type));
 		UNSAID(thislsn);
-		UNSAID(class);
 
-		if (type == SFS_JPHYS_TRIM) {
+		if (class == SFS_JPHYS_CONTAINER && type == SFS_JPHYS_TRIM) {
 			if (reclen != sizeof(jt)) {
 				kprintf("sfs: %s: wrong size trim "
 					"record, block %u offset %u\n",

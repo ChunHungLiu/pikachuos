@@ -437,12 +437,28 @@ fail:
 	return NULL;
 }
 
+
+static
+bool
+operation_aborted(struct array* abort_list, sfs_lsn_t lsn)
+{
+	unsigned num, i;
+	sfs_lsn_t *curlsn;
+	num = array_num(abort_list);
+	for (i = 0; i < num; i++) {
+		curlsn = (sfs_lsn_t *) array_get(abort_list, i);
+		if (*curlsn == lsn) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static
 int
 sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 	int result = 0;
 	int type = *((int*)recptr);
-	reserve_buffers(SFS_BLOCKSIZE);
 
 	// data will contain the data for a block on disk. dinode will treat that data as an inode
 	void *data = kmalloc(SFS_BLOCKSIZE);
@@ -455,6 +471,7 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 		int block = ((int*)recptr)[2];
 		result = sfs_readblock(&sfs->sfs_absfs, block, data, SFS_BLOCKSIZE);
 	}
+	kprintf("We have a recovery record of type: %d", type);
 
 	kprintf("    ");
 	jentry_print(recptr);
@@ -639,12 +656,13 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr) {
 		}
 		break;
 		case TRANS_BEGIN:
+			// BEGIN and COMMIT will still remain here, but 
+			break;
 		case TRANS_COMMIT:
+			break;
 		default:
 		panic("Invalid record type (%d)", type);
 	}
-
-	unreserve_buffers(SFS_BLOCKSIZE);
 
 	return 0;
 }
@@ -704,6 +722,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (result) {
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sfs->sfs_freemaplock);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return result;
 	}
@@ -717,6 +736,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 			SFS_MAGIC);
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sfs->sfs_freemaplock);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return EINVAL;
 	}
@@ -738,6 +758,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (sfs->sfs_freemap == NULL) {
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sfs->sfs_freemaplock);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return ENOMEM;
 	}
@@ -745,6 +766,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (result) {
 		lock_release(sfs->sfs_vnlock);
 		lock_release(sfs->sfs_freemaplock);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return result;
 	}
@@ -763,6 +785,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (result) {
 		unreserve_fsmanaged_buffers(2, SFS_BLOCKSIZE);
 		drop_fs_buffers(&sfs->sfs_absfs);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return result;
 	}
@@ -783,6 +806,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	void *recptr;
 	size_t reclen;
 	reserve_buffers(SFS_BLOCKSIZE);
+	sfs_lsn_t curlsn;
 
 	// Iterate through the journal once to
 	// 1) Build transaction objects
@@ -798,35 +822,25 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	//  active transaction, we treat the active transaction as aborted, and we
 	//  move the aborted transaction into `transaction_list` with `committed`
 	//  set to `false`
-	struct array *transaction_list = array_create();
+
+	struct array *abort_list = array_create();
 	struct array *transaction_active = array_create();
-	array_init(transaction_list);
+	array_init(abort_list);
 	// Iterate
 	result = sfs_jiter_fwdcreate(sfs, &ji);
 	if (result)
 		panic("Fuck everything is broken");
 	while (!sfs_jiter_done(ji)) {
 		type = sfs_jiter_type(ji);
+		curlsn = sfs_jiter_lsn(ji);
 		recptr = sfs_jiter_rec(ji, &reclen);
 		kprintf("We have a record of type %u\n", type);
 		switch (type) {
 			case TRANS_BEGIN:
 			{
 				// Convenience
-				struct recovery_transaction *old_trans;
+				// struct recovery_transaction *old_trans;
 				struct trans_begin_args *new_trans = (struct trans_begin_args *)recptr;
-
-				// Iterate through the active transactions and check if there's one with the same id
-				num = array_num(transaction_active);
-				for (i = 0; i < num; i++) {
-					old_trans = array_get(transaction_active, i);
-					// If `old_trans` was not committed, treat it as aborted
-					if (old_trans->id == new_trans->id) {
-						array_remove(transaction_active, i);
-						old_trans->committed = false;
-						result = array_add(transaction_list, old_trans, NULL);
-					}
-				}
 
 				// Create the transaction record
 				struct recovery_transaction rec_trans;
@@ -855,7 +869,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 						num_found++;
 						array_remove(transaction_active, i);
 						active_trans->committed = true;
-						result = array_add(transaction_list, active_trans, NULL);
 					}
 				}
 
@@ -912,6 +925,9 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 			// All log records have their transaction id as the second member
 			int id = ((int*)recptr)[1];
 
+			KASSERT(type != TRANS_COMMIT);
+			KASSERT(type != TRANS_BEGIN);
+
 			// Convenience
 			struct recovery_transaction *active_trans;
 
@@ -924,7 +940,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 				if (active_trans->id == id) {
 					num_found++;
 					kprintf("Adding operation type %d to transaction %d at index %d\n", type, id, i);
-					result = array_add(active_trans->operations, recptr, NULL);
+					result = array_add(active_trans->operations, &curlsn, NULL);
 				}
 			}
 
@@ -937,20 +953,24 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 			panic("Fuck everything is broken");
 	}
 
-	kprintf("Done reading journal\n");
+	kprintf("Done with first read of journal\n");
+	void *lsnptr;
 
-	// There may still be uncommitted records in the active transactions list.
-	// Mark those as aborted
+	// Build the abosrt_list from active_transactions list
 	num = array_num(transaction_active);
 	struct recovery_transaction *rec_trans;
 	for (i = 0; i < num; i++) {
 		rec_trans = array_get(transaction_active, i);
 		rec_trans->committed = false;
-		result = array_add(transaction_list, rec_trans, NULL);
+		unsigned num_ops = array_num(rec_trans->operations);
+		unsigned j;
+		for (j = 0; j < num_ops; j++) {
+			lsnptr = array_get(rec_trans->operations, j);
+			result = array_add(abort_list, lsnptr, NULL);
+			if (result)
+				panic("stay calm and debug");
+		}
 	}
-
-	// At this point all transactions are in `transaction_list`
-
 	// Destroy the active transactions list
 	array_destroy(transaction_active);
 
@@ -958,26 +978,31 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	sfs_jiter_destroy(ji);
 	unreserve_buffers(SFS_BLOCKSIZE);
 
+	reserve_buffers(SFS_BLOCKSIZE);
+	result = sfs_jiter_fwdcreate(sfs, &ji);
+
+	if (result)
+		panic("Fuck everything is broken");
+	bool redo;
+	// At this point all aborted operations are in `abort_list`
+	while (!sfs_jiter_done(ji)) {
+		type = sfs_jiter_type(ji);
+		curlsn = sfs_jiter_lsn(ji);
+		recptr = sfs_jiter_rec(ji, &reclen);
+		redo = !operation_aborted(abort_list, curlsn);
+		result = sfs_recover_operation(sfs, redo, recptr);
+		if (result)
+			panic("stay calm and debug");
+		result = sfs_jiter_next(sfs, ji);
+		if (result)
+			panic("Fuck everything is broken");
+	}
+
+	sfs_jiter_destroy(ji);
+	unreserve_buffers(SFS_BLOCKSIZE);
+
 	/* Done with container-level scanning */
 	sfs_jphys_stopreading(sfs);
-
-	// Now iterate through all transactions, and all operations in that transaction
-	num = array_num(transaction_list);
-	for (i = 0; i < num; i++) {
-		kprintf("Processing\n");
-		rec_trans = array_get(transaction_list, i);
-		bool redo = rec_trans->committed;
-		unsigned num_ops = array_num(rec_trans->operations);
-		unsigned j;
-		for (j = 0; j < num_ops; j++) {
-			recptr = array_get(rec_trans->operations, j);
-			kprintf("Recovering operation %d of transaction %d at index %d\n", 
-				j, rec_trans->id, i);
-			result = sfs_recover_operation(sfs, redo, recptr);
-			if (result)
-				panic("stay calm and debug");
-		}
-	}
 
 	kprintf("Done recovering\n");
 
@@ -987,6 +1012,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (result) {
 		unreserve_fsmanaged_buffers(2, SFS_BLOCKSIZE);
 		drop_fs_buffers(&sfs->sfs_absfs);
+		sfs->sfs_device = NULL;
 		sfs_fs_destroy(sfs);
 		return result;
 	}
