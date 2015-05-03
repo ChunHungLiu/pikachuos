@@ -6,7 +6,7 @@ import sys
 import os
 from termcolor import colored
  
-def run(command):
+def run(command, print_start="unmatchable", print_end="unmatchable"):
 	print colored(command, "red", attrs=["bold"])
 	result = subprocess.Popen(command.split(" "), 
 		stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -18,21 +18,25 @@ def run(command):
 		if "warn" in line.lower():
 			print colored(line[:-1], "yellow", attrs=["bold"])
 			continue
-		if "OS/161 kernel: p /testbin/frack check" in line:
+		if print_start in line:
 			do_print = True
 		if do_print:
 			print line[:-1]
-		if "Done." in line:
+		if print_end in line:
 			do_print = False
 
 def frack(params):
 	print "Testing: %s" % params
 	for doom in xrange(1,2):
 		run('hostbin/host-mksfs LHD1.img test')
+
 		run('sys161 -D %d kernel mount sfs lhd1:; cd lhd1:;'
 			'p /testbin/frack do %s; q' % (doom, params))
+
 		run('sys161 kernel mount sfs lhd1:; cd lhd1:;'
-			'p /testbin/frack check %s; q' % (params))
+			'p /testbin/frack check %s; q' % (params),
+			print_start="OS/161 kernel: p /testbin/frack check",
+			print_end="Done.")
 
 def test(command):
 	pass
