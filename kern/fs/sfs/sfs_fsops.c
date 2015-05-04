@@ -508,6 +508,9 @@ sfs_recover_operation(struct sfs_fs *sfs, bool redo, void* recptr, struct bitmap
 			struct block_alloc_args *jentry = (struct block_alloc_args *)recptr;
 			lock_acquire(sfs->sfs_freemaplock);
 			if (redo) {
+				bzero(data, SFS_BLOCKSIZE);
+				result = sfs_writeblock(&sfs->sfs_absfs, jentry->disk_addr, 
+					NULL, data, SFS_BLOCKSIZE);
 				if (!bitmap_isset(sfs->sfs_freemap, jentry->disk_addr))
 					bitmap_mark(sfs->sfs_freemap, jentry->disk_addr);
 			} else {

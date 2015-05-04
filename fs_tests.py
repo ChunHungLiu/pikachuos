@@ -87,6 +87,19 @@ def bigfile(max_doom=5):
 		run('hostbin/host-sfsck LHD1.img',
 			print_start='', print_end='')
 
+def rmtest(max_doom=5):
+	print "Testing bigfile"
+	for doom in xrange(1, max_doom):
+		run('hostbin/host-poisondisk LHD1.img')
+		run('hostbin/host-mksfs LHD1.img test')
+
+		run('sys161 -D %d kernel mount sfs lhd1:; cd lhd1:;'
+			'p /testbin/rmtest; q' % (doom),
+			print_start='', print_end='')
+
+		run('hostbin/host-sfsck LHD1.img',
+			print_start='', print_end='')
+
 
 def test(command):
 	pass
@@ -102,16 +115,15 @@ def main():
 	print "f_test"
 	print "filetest"
 	print "rmdirtest"
-	print "rmtest"
 	print "sparsefile"
 
-	return # Tests below this are all passing
+	#return # Tests below this are all passing
 
 	# Full test suite
 
-
-	bigfile(20)
-	dirconc(seed, 20)
+	#bigfile(20)
+	#dirconc(seed, 20)
+	rmtest()
 
 	# Frack tests
 	frack("createwrite %s" % size)
