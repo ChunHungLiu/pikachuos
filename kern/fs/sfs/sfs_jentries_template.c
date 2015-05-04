@@ -58,8 +58,8 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 	}
 
 	// Debugging
-	kprintf("jentry: ");
-	jentry_print(recptr);
+	//kprintf("jentry: ");
+	//jentry_print(recptr);
 
 	switch (code) {
 		// Special case. There is extra data after the struct
@@ -70,13 +70,13 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 /* Autogenerate: cases */
 	}
 
-	kprintf(" reclen=%d, ", reclen);
+	//kprintf(" reclen=%d, ", reclen);
 	if (ctx == NULL) {
 		lsn = sfs_jphys_write(sfs, /*callback*/ NULL, ctx, code, recptr, reclen);
 	} else {
 		lsn = sfs_jphys_write(sfs, sfs_trans_callback, ctx, code, recptr, reclen);
 	}
-	kprintf("lsn=%lld, ", lsn);
+	//kprintf("lsn=%lld, ", lsn);
 
 	// If the journal entry is for something that modified a buffer, 
 	//  update that buffer's metadata to refer to this journal entry
@@ -84,7 +84,7 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 		block = ((int*)recptr)[2];
 		recbuf = buffer_find(&sfs->sfs_absfs, (daddr_t)block);
 		KASSERT(recbuf != NULL);
-		kprintf("buffer=%p, ", recbuf);
+		//kprintf("buffer=%p, ", recbuf);
 
 		// get the old data, and update the oldest_lsn field only if it's the 
 		// first operation that modifies it
