@@ -198,8 +198,8 @@ int sys_execv(char* progname, char** args, int *retval, bool iskernel) {
 	// Figure out nargs, and the length for each arg string
 	while(args[nargs] != NULL) {
 		if (iskernel) {
-			len = strlen(args[nargs]);
-			if (len == 0) {
+			len = strlen(args[nargs]) + 1;
+			if (len == 1) {
 				nargs--;
 				break;
 			}

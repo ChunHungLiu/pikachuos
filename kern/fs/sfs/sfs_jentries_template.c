@@ -98,8 +98,17 @@ sfs_lsn_t sfs_jphys_write_wrapper(struct sfs_fs *sfs,
 		}
 		buffer_set_fsdata(recbuf, (void*)buf_metadata);
 	}
+
+	// We need to track the lsn of the newest action to modify the freemap
+	//  in order to enforce WAL. We need to track the lsn of the oldest action
+	//  to modify the freemap so that we know where to trim to.
 	if (code == BLOCK_ALLOC || code == BLOCK_DEALLOC) {
-		sfs->newest_freemap_lsn = lsn;
+		if (sfs->oldest_freemap_lsn == 0) {
+			sfs->oldest_freemap_lsn = lsn;
+		}
+		if (sfs->newest_freemap_lsn < lsn) {
+			sfs->newest_freemap_lsn = lsn;
+		}
 	}
 
 	// do checkpoint here.

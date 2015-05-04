@@ -86,6 +86,10 @@ int sfs_checkpoint(struct sfs_fs* sfs) {
 	}
 	lock_release(buffer_lock);
 
+	// Special case for the freemap. Don't trim if the freemap is written
+	if (sfs->oldest_freemap_lsn < oldest_lsn)
+		oldest_lsn = sfs->oldest_freemap_lsn;
+
 	// Trim!
 	if (oldest_lsn == 0xFFFFFFFF) {
 		oldest_lsn = sfs_jphys_peeknextlsn(sfs);

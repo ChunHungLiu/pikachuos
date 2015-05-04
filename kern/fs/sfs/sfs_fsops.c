@@ -102,6 +102,8 @@ sfs_freemapio(struct sfs_fs *sfs, enum uio_rw rw)
 					       ptr, SFS_BLOCKSIZE);
 		}
 		else {
+			sfs->newest_freemap_lsn = 0;
+			sfs->oldest_freemap_lsn = 0;
 			sfs_jphys_flush(sfs, sfs->newest_freemap_lsn);
 			result = sfs_writeblock(&sfs->sfs_absfs,
 						SFS_FREEMAP_START + j, NULL,
@@ -395,6 +397,7 @@ sfs_fs_create(void)
 	sfs->sfs_freemap = NULL;
 	sfs->sfs_freemapdirty = false;
 	sfs->newest_freemap_lsn = 0;
+	sfs->oldest_freemap_lsn = 0;
 
 	/* locks */
 	sfs->trans_lock = lock_create("trans_lock");
